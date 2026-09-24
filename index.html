@@ -80,23 +80,36 @@
   .stage{ flex:1 1 auto; position:relative; min-height:0; margin:0 clamp(9px,2.4vw,14px) clamp(6px,1.1vh,10px);
           border-radius:10px; overflow:hidden; background:#1B1E24; transition:opacity .5s ease; }
   #map{ position:absolute; inset:0; background:#1B1E24; }
-    .leaflet-bar a, .leaflet-bar a:hover{ background:#15181D; color:#fff; border-color:#3A3F48; width:40px; height:40px; line-height:40px; font-size:22px; }
+  .leaflet-bar a, .leaflet-bar a:hover{ background:#15181D; color:#fff; border-color:#3A3F48; width:40px; height:40px; line-height:40px; font-size:22px; }
   .leaflet-bar{ border:1.5px solid #3A3F48!important; box-shadow:0 2px 8px rgba(0,0,0,.5); }
   .home{ width:43px; height:43px; border-radius:6px; border:1.5px solid #3A3F48; background:#15181D; color:#4C93F0;
          font-size:22px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.5); }
-    .darkmap{ filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.4); }
+  .darkmap{ filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.4); }
   .leaflet-container{ font-family:"Barlow",sans-serif; }
   .leaflet-control-attribution{ background:rgba(0,0,0,.55)!important; color:#8A919C!important; font-size:9px!important; }
   .leaflet-control-attribution a{ color:#AEB6C2!important; }
   .me{ width:18px; height:18px; border-radius:50%; background:#2E7DF0; border:3px solid #fff;
        box-shadow:0 0 0 10px rgba(76,147,240,.25); }
   .melbl{ color:#fff; font-weight:700; font-size:13px; white-space:nowrap; text-shadow:0 1px 3px #000,0 0 6px #000; }
+  .lm small{ display:block; }
+  #map.z-mid .lm small{ display:none; }
+  #map.z-lo .lm span{ display:none; }
+  #map.z-lo .lm{ padding:3px; border-radius:50%; }
+  .bstop{ width:26px; height:26px; border-radius:6px; background:#4C93F0; color:#fff; border:2px solid #fff;
+          display:grid; place-items:center; font-family:"Barlow Condensed",sans-serif; font-weight:700; font-size:14px; }
+  .plan{ border-radius:10px; padding:9px 11px; background:#F5F3EF; }
+  .plan.bus{ background:#EEF3FB; }
+  .plan .ph{ font-weight:700; font-size:clamp(15px,2.1vh,18px); }
+  .plan.bus .ph{ color:#1B5FBF; }
+  .plan .tot{ font-size:clamp(12px,1.6vh,14px); font-weight:600; color:#33404B; margin-top:4px; }
+  .stp{ margin:4px 0 0 0; padding-left:20px; font-size:clamp(12.5px,1.65vh,14.5px); color:#33404B; line-height:1.35; }
+  .stp:empty{ display:none; }
   .lm{ display:inline-flex; align-items:center; gap:7px; padding:5px 10px 5px 6px; border-radius:9px; white-space:nowrap;
        background:rgba(17,21,28,.92); border:1.4px solid #5A6474; cursor:pointer; transition:opacity .3s; }
   .lm i{ width:14px; height:14px; border-radius:50%; border:2px solid #11151C; flex:0 0 auto; }
   .lm b{ font-size:13.5px; color:#fff; } .lm small{ font-size:11.5px; color:#AEB7C4; font-weight:600; }
   .lm.food i{ background:#F0A93C; } .lm.transit i{ background:#4C93F0; } .lm.park i{ background:#5AA469; }
-  .lm.arts i{ background:#A874D8; } .lm.civic i{ background:#C3A469; }
+  .lm.art i, .lm.museum i{ background:#A874D8; } .lm.history i{ background:#C3A469; } .lm.culture i{ background:#E07BB0; }
   .lm.on{ background:#fff; border-color:#fff; } .lm.on b{ color:#15202C; } .lm.on small{ color:#4E5B68; }
   body.busy .lm:not(.on){ opacity:.12; pointer-events:none; }
   .pin{ width:32px; height:32px; border-radius:50%; display:grid; place-items:center; border:3px solid #fff;
@@ -110,7 +123,7 @@
          box-shadow:0 -8px 22px -14px rgba(0,0,0,.6); border-radius:14px 14px 0 0;
          padding:clamp(11px,1.8vh,16px) clamp(13px,3.4vw,18px) clamp(9px,1.4vh,13px);
          transform:translateY(103%); transition:transform .42s cubic-bezier(.2,.7,.3,1);
-         display:flex; flex-direction:column; gap:clamp(6px,1vh,9px); max-height:78%; overflow:auto; }
+         display:flex; flex-direction:column; gap:clamp(6px,1vh,9px); max-height:64%; overflow:auto; }
   .card.up{ transform:translateY(0); }
   .kick{ font-family:"Barlow Condensed",sans-serif; font-weight:700; font-size:clamp(11px,1.5vh,13px);
          letter-spacing:.16em; text-transform:uppercase; color:#B7791F; display:flex; gap:8px; align-items:center; }
@@ -208,14 +221,24 @@
     {id:"9", dest:"Andorra"}, {id:"12", dest:"50th-Woodland"},
     {id:"21", dest:"69th St Transit Center"}, {id:"42", dest:"Wycombe"}];
   var SEED={"9":16,"12":9,"21":12,"42":7};
-  // Landmarks from prototype A - tap for a real walking route.
-  var PLACES=[
-    {nm:"Midtown Village", cat:"food", walk:4, ll:[39.9497,-75.1619]},
-    {nm:"Jefferson Station", cat:"transit", walk:5, ll:[39.9522,-75.1580]},
-    {nm:"Reading Terminal", cat:"food", walk:8, ll:[39.9533,-75.1590], right:true},
-    {nm:"Washington Square", cat:"park", walk:7, ll:[39.9466,-75.1524]},
-    {nm:"City Hall", cat:"civic", walk:10, ll:[39.9524,-75.1636], bus:{route:"21",stops:3,off:"Broad & Walnut"}},
-    {nm:"Kimmel Center", cat:"arts", walk:9, ll:[39.9467,-75.1655], bus:{route:"21",stops:3,off:"Broad & Walnut"}}];
+  // Citywide landmarks. /api/transit adds the direct-bus plan from SEPTA's stop list;
+  // this copy is the fallback (walking times only) if that call fails.
+  var LANDMARKS=[
+    ["libertybell","Liberty Bell","history",39.9496,-75.1503],["indhall","Independence Hall","history",39.9489,-75.1500],
+    ["amrev","Museum of the American Revolution","history",39.9484,-75.1456],["elfreth","Elfreth's Alley","history",39.9527,-75.1425],
+    ["pennslanding","Penn's Landing","park",39.9460,-75.1410],["washsq","Washington Square","park",39.9466,-75.1524],
+    ["chinatown","Chinatown Friendship Arch","culture",39.9535,-75.1558],["reading","Reading Terminal Market","food",39.9533,-75.1590],
+    ["magic","Magic Gardens","art",39.9427,-75.1593],["italian","Italian Market","food",39.9385,-75.1579],
+    ["cityhall","City Hall","history",39.9524,-75.1636],["love","LOVE Park","park",39.9543,-75.1653],
+    ["kimmel","Kimmel Center","art",39.9467,-75.1655],["rittenhouse","Rittenhouse Square","park",39.9496,-75.1718],
+    ["franklin","Franklin Institute","museum",39.9582,-75.1731],["barnes","Barnes Foundation","art",39.9606,-75.1727],
+    ["pma","Museum of Art (Rocky Steps)","art",39.9656,-75.1810],["eastern","Eastern State Penitentiary","history",39.9683,-75.1727],
+    ["30th","30th Street Station","transit",39.9557,-75.1820],["penn","University of Pennsylvania","culture",39.9515,-75.1940],
+    ["zoo","Philadelphia Zoo","park",39.9714,-75.1955]
+  ].map(function(a){
+    var dx=Math.abs(a[4]-(-75.15883))*85200, dy=Math.abs(a[3]-39.948704)*111200;
+    return {id:a[0], nm:a[1], cat:a[2], ll:[a[3],a[4]], walk:Math.max(1,Math.ceil((dx+dy)/80)), bus:null};
+  });
   var CATS=[
     {id:"food", e:"&#127869;", t:"Restaurants", s:"Eat & drink"},
     {id:"sights", e:"&#127963;", t:"Sights", s:"Landmarks & culture"},
@@ -295,25 +318,37 @@
   map.on("movestart zoomstart",function(){ clearTimeout(idle); });
   map.on("moveend",function(){ clearTimeout(idle);
     idle=setTimeout(function(){ if(!state) map.setView(STOP,ZOOM,{animate:true}); },40000); });
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
     maxZoom:19, className:"darkmap",
     attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
   L.marker(STOP,{interactive:false,icon:L.divIcon({className:"",html:'<div class="me"></div>',iconSize:[18,18],iconAnchor:[9,9]})}).addTo(map);
   L.marker(STOP,{interactive:false,icon:L.divIcon({className:"",html:'<div class="melbl">You are here</div>',iconSize:[90,16],iconAnchor:[45,-14]})}).addTo(map);
 
-  var lmMarkers=PLACES.map(function(p,i){
-    var html='<div class="lm '+p.cat+'" data-i="'+i+'"><i></i><span><b>'+esc(p.nm)+'</b><br><small>'+p.walk+' min walk</small></span></div>';
-    var m=L.marker(p.ll,{icon:L.divIcon({className:"",html:html,iconSize:null,iconAnchor:p.right?[0,18]:[0,18]})}).addTo(map);
-    m.on("click",function(){ pickLandmark(i); });
-    return m;
-  });
+  var lmLayer=L.layerGroup().addTo(map);
+  function drawLandmarks(){
+    lmLayer.clearLayers();
+    LANDMARKS.forEach(function(p,i){
+      var html='<div class="lm '+p.cat+'" data-i="'+i+'"><i></i><span><b>'+esc(p.nm)+'</b><small>'+
+        (p.bus?'&#128652; '+p.bus.route+' \u00B7 ':'')+p.walk+' min walk</small></span></div>';
+      var m=L.marker(p.ll,{icon:L.divIcon({className:"",html:html,iconSize:null,iconAnchor:[9,9]})}).addTo(lmLayer);
+      m.on("click",function(){ pickLandmark(i); });
+    });
+  }
+  drawLandmarks();
+  fetch("/api/transit").then(function(r){ if(!r.ok) throw 0; return r.json(); })
+    .then(function(d){ if(d.landmarks && d.landmarks.length){ LANDMARKS=d.landmarks; drawLandmarks(); } })
+    .catch(function(){});
+  // Labels shrink as you zoom out, so the whole city fits without a pile-up.
+  function zoomClass(){ var z=map.getZoom(), el=$("map");
+    el.classList.toggle("z-mid", z<=15 && z>14); el.classList.toggle("z-lo", z<=14); }
+  map.on("zoomend",zoomClass); zoomClass();
   var layer=L.layerGroup().addTo(map), routeLine=null;
   function clearLayer(){ layer.clearLayers(); routeLine=null; }
-  function cardPad(){ return [16, Math.min($("stage").clientHeight*0.8, $("card").offsetHeight)+16]; }
+  function cardPad(){ var h=$("stage").clientHeight; return [16, Math.min(h-140, $("card").offsetHeight+16)]; }
   function frame(latlngs){
     var b=L.latLngBounds(latlngs.concat([STOP]));
-    map.fitBounds(b,{paddingTopLeft:[40,40],paddingBottomRight:[40,cardPad()[1]],maxZoom:17,animate:true});
+    map.fitBounds(b,{paddingTopLeft:[40,40],paddingBottomRight:[40,cardPad()[1]],maxZoom:18,animate:true});
   }
   function drawRoute(path, dest){
     if(routeLine) layer.removeLayer(routeLine);
@@ -323,7 +358,7 @@
       L.polyline(pts,{color:"#F2B233",weight:6,opacity:1,lineCap:"round",lineJoin:"round"})]).addTo(layer);
     frame(pts);
   }
-    function resetView(){ map.setView(STOP,ZOOM,{animate:true}); }
+  function resetView(){ map.setView(STOP,ZOOM,{animate:true}); }
   window.addEventListener("resize",function(){ map.invalidateSize(); });
   setTimeout(function(){ map.invalidateSize(); },300);
 
@@ -424,6 +459,12 @@
     card.querySelectorAll(".opt").forEach(function(b){ b.onclick=function(e){ e.stopPropagation(); choose(+b.getAttribute("data-i")); }; });
 
     clearLayer();
+    // Faint preview of each walk, so riders see roughly where each option is.
+    state.previews=state.options.map(function(o){
+      var pts=(o.path&&o.path.length>1)?o.path:[STOP,[o.lat,o.lon]];
+      return L.polyline(pts,{color:({eat:"#F0A93C",shop:"#E07BB0",see:"#A874D8"})[o.kind]||"#F2B233",
+        weight:4,opacity:.7,dashArray:"2 8",lineCap:"round"}).addTo(layer);
+    });
     state.pins=state.options.map(function(o,i){
       var m=L.marker([o.lat,o.lon],{icon:L.divIcon({className:"",html:'<div class="pin '+o.kind+'">'+(i+1)+'</div>',iconSize:[32,32],iconAnchor:[16,16]})}).addTo(layer);
       m.on("click",function(){ choose(i); }); return m;
@@ -447,26 +488,50 @@
       body='<div class="name">'+esc(o.name)+'</div>'+hrs+
         '<div class="steps"><b>Walk '+o.walk+' min</b><span>from this stop</span></div>';
     }
+    if(o.steps && o.steps.length) body+='<ol class="stp">'+stepsHtml(o.steps)+'</ol>';
     show(kick(state.mode==="wait"?"Side quest":"Explore",true)+(o.pitch?'<div class="note">'+esc(o.pitch)+'</div>':'')+body+
-      '<div class="src">Route: TomTom · map: OpenStreetMap / CARTO</div>', 25000);
+      '<div class="src">Route: TomTom · map: OpenStreetMap</div>', 25000);
+    (state.previews||[]).forEach(function(l){ layer.removeLayer(l); }); state.previews=[];
     setTimeout(function(){ drawRoute(o.path,[o.lat,o.lon]); },60);
   }
 
-  // ---- landmarks from prototype A: tap for a real walking route
+  // ---- landmarks: walk or a direct bus from this stop
   function pickLandmark(i){
     if(arriving) return;
-    var p=PLACES[i]; reset(true); var my=++seq;
+    var p=LANDMARKS[i]; reset(true); var my=++seq;
     state={mode:"landmark"};
     document.querySelectorAll(".lm").forEach(function(el){ el.classList.toggle("on",+el.getAttribute("data-i")===i); });
-    var busLine = p.bus ? '<div class="steps"><b>Bus '+p.bus.route+' · '+p.bus.stops+' stops</b><span>boards here in '+eta[p.bus.route]+' min · off at '+p.bus.off+'</span></div>' : '';
-    function render(walk){
-      show(kick("To "+esc(p.nm),false)+'<div class="steps"><b>Walk '+walk+' min</b><span>from this stop</span></div>'+busLine+
-        '<div class="src">Route: TomTom · map: OpenStreetMap / CARTO</div>',15000);
+    var b=p.bus, wait=b && tracked[b.route] && typeof eta[b.route]==="number" ? eta[b.route] : null;
+    var busHtml = b ? '<div class="plan bus"><div class="ph">&#128652; Bus '+b.route+
+        (wait!==null?' \u00B7 next in '+wait+' min':'')+'</div>'+
+        '<ol class="stp"><li>Board here (Walnut &amp; 11th), heading west</li>'+
+        '<li>Ride ~'+b.ride+' min, get off near <b>'+esc(b.stop)+'</b></li>'+
+        '<li>Walk ~'+b.walkAfter+' min to '+esc(p.nm)+'</li></ol>'+
+        '<div class="tot">About '+((wait||0)+b.ride+b.walkAfter)+' min door to door</div></div>' : '';
+    // With a bus plan, walking is the short alternative line; without one it gets the full steps.
+    var walkHtml = b ? '<div class="src" style="font-size:13px">&#128694; Or walk ~'+p.walk+' min</div>'
+      : '<div class="plan walk"><div class="ph">&#128694; Walk ~'+p.walk+' min</div><ol class="stp" id="lmSteps"></ol></div>';
+    var noBus = (!b && p.walk>25) ? '<div class="src">No direct bus from this stop \u2014 all buses here head west on Walnut.</div>' : '';
+    show(kick("To "+esc(p.nm),false)+(b?busHtml+walkHtml:walkHtml+noBus)+
+      '<div class="src">Direct buses only \u00B7 times are estimates \u00B7 stops: SEPTA \u00B7 walking: TomTom</div>',25000);
+    if(b){
+      var stopLL=[b.lat,b.lng];
+      L.polyline([STOP,stopLL],{color:"#4C93F0",weight:6,dashArray:"2 10",lineCap:"round"}).addTo(layer);
+      L.polyline([stopLL,p.ll],{color:"#F2B233",weight:5,dashArray:"1 9",lineCap:"round"}).addTo(layer);
+      L.marker(stopLL,{interactive:false,icon:L.divIcon({className:"",html:'<div class="bstop">'+b.route+'</div>',iconSize:[26,26],iconAnchor:[13,13]})}).addTo(layer);
+      setTimeout(function(){ frame([stopLL,p.ll]); },60);
     }
-    render(p.walk);
-    fetch("/api/quest?mode=route&lat="+p.ll[0]+"&lon="+p.ll[1]).then(function(r){return r.json();})
-      .catch(function(){ return {walk:p.walk, path:null}; })
-      .then(function(d){ if(my!==seq) return; render(d.walk||p.walk); drawRoute(d.path,p.ll); });
+    if(p.walk<=30){
+      fetch("/api/quest?mode=route&lat="+p.ll[0]+"&lon="+p.ll[1]).then(function(r){return r.json();})
+        .catch(function(){ return {path:null}; })
+        .then(function(d){ if(my!==seq) return;
+          if(!b) drawRoute(d.path,p.ll);
+          else if(d.path) L.polyline(d.path,{color:"#F2B233",weight:3,opacity:.45}).addTo(layer);
+          var ol=$("lmSteps"); if(ol) ol.innerHTML=stepsHtml(d.steps); });
+    } else if(!b){ setTimeout(function(){ frame([p.ll]); },60); }
+  }
+  function stepsHtml(steps){
+    return (steps||[]).slice(0,4).map(function(t){ return '<li>'+esc(t)+'</li>'; }).join("");
   }
 
   // ---------------------------------------------------------------- wiring
@@ -477,7 +542,6 @@
     row.addEventListener("click",function(){ quest(r.id); });
     row.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); quest(r.id); } });
   });
-  map.on("click",function(){ if(state) reset(false); });
 
   restartTick(); poll();
 
