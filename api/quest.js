@@ -315,7 +315,7 @@ export default async function handler(req, res) {
       return {
         name: c.name, kind: c.kind, category: c.category, lat: c.lat, lon: c.lon,
         walk, dwell, hours: c.hours, open: c.open,
-        pitch: String(o.pitch || "").slice(0, 70), path,
+        pitch: String(o.pitch || "").slice(0, 70), path, steps,
       };
     }));
     const options = checked.filter(Boolean).slice(0, 3);
