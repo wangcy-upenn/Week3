@@ -1,4 +1,3 @@
-Septa · JS
 // Vercel serverless function.
 //
 // Why this file exists: the browser cannot call www3.septa.org directly
