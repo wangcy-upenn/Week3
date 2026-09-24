@@ -1,43 +1,51 @@
-// Vercel serverless function - "Side Quest".
+// Vercel serverless function - Side Quest + Explore.
 //
-// A rider taps the bus they are waiting for. This function answers:
-// "what can I actually do nearby and still be back before that bus comes?"
+//   /api/quest?mode=wait&route=21&minutes=12   "my bus is far, what fits?"
+//   /api/quest?mode=explore&cat=food            food | sights | gems | shops
+//   /api/quest?mode=route&lat=..&lon=..          walking route to one place
 //
 // Who does what:
-//   TomTom     -> real places near the stop + real walking routes
-//   AI         -> reads the live situation (minutes left, delay, time of day,
-//                 weather) and picks 3 different things worth doing
-//   hard code  -> checks the AI's time math, so nobody misses the bus
+//   TomTom     -> real places near the stop, their opening hours, walking routes
+//   AI         -> reads the live situation (wait time, delay, time of day,
+//                 weather, who is open) and picks 3 places + a one-line pitch
+//   hard code  -> drops closed places and checks the AI's time math, so the AI
+//                 can never send someone somewhere shut, or make them miss the bus
 //
-// Environment variables (Vercel -> Settings -> Environment Variables):
-//   TOMTOM_API_KEY     real places + routes
-//   DEEPSEEK_API_KEY   AI step (or ANTHROPIC_API_KEY)
+// Vercel environment variables:
+//   TOMTOM_API_KEY     places, hours, routes
+//   DEEPSEEK_API_KEY   the AI step (or ANTHROPIC_API_KEY)
 
 const STOP = { lat: 39.948704, lng: -75.15883 };
 
 const BUFFER_MIN = 2; // be back at the stop this long before the bus
 const MIN_BUDGET = 5; // below this, don't send anyone away
+const EXPLORE_RADIUS = 800; // ~10 min walk
 const WALK_M_PER_MIN = 78; // ~1.3 m/s
 const GRID_FACTOR = 1.3; // grid streets: walking distance > straight line
 const MIN_DWELL = { eat: 3, shop: 4, see: 2 };
 
-const BUCKET = {
-  CAFE_PUB: "eat", RESTAURANT: "eat", MARKET: "shop", SHOP: "shop",
-  SHOPPING_CENTER: "shop", MUSEUM: "see", IMPORTANT_TOURIST_ATTRACTION: "see",
-  TOURIST_ATTRACTION: "see", PARK_RECREATION_AREA: "see", THEATER: "see",
-  CULTURAL_CENTER: "see", PLACE_OF_WORSHIP: "see", LIBRARY: "see",
+// TomTom classification code -> kind of place.
+const KIND = {
+  CAFE_PUB: "eat", RESTAURANT: "eat",
+  SHOP: "shop", MARKET: "shop", SHOPPING_CENTER: "shop",
+  MUSEUM: "see", IMPORTANT_TOURIST_ATTRACTION: "see", TOURIST_ATTRACTION: "see",
+  PARK_RECREATION_AREA: "see", THEATER: "see", CULTURAL_CENTER: "see",
+  PLACE_OF_WORSHIP: "see", LIBRARY: "see",
 };
+// café/pub, restaurant, shop, market, museum, important tourist attraction,
+// park, theater
 const CATEGORY_SET = "9376,7315,9361,7332,7317,7376,9362,7318";
 
-// Used only when there is no TomTom key. Marked as sample data in the response.
-const SAMPLE = [
-  { name: "Reading Terminal Market", bucket: "eat", category: "market hall", lat: 39.9533, lon: -75.1592 },
-  { name: "Midtown Village", bucket: "eat", category: "restaurants & cafés", lat: 39.9495, lon: -75.1619 },
-  { name: "Jefferson Station shops", bucket: "shop", category: "shops", lat: 39.9520, lon: -75.1580 },
-  { name: "Washington Square", bucket: "see", category: "park", lat: 39.9469, lon: -75.1524 },
-  { name: "City Hall", bucket: "see", category: "landmark", lat: 39.9524, lon: -75.1636 },
-];
+// Explore menu -> which kinds of place qualify, and what we ask the AI for.
+const CATS = {
+  food:   { kinds: ["eat"],  ask: "the 3 best places to eat or drink right now" },
+  sights: { kinds: ["see"],  ask: "the 3 most worthwhile sights, landmarks or cultural spots" },
+  shops:  { kinds: ["shop"], ask: "the 3 most interesting shops to browse" },
+  gems:   { kinds: ["eat", "shop", "see"],
+            ask: "3 places with real local Philadelphia character - independent, historic or one-of-a-kind. Avoid national chains" },
+};
 
+// ---------------------------------------------------------------- helpers
 function haversine(aLat, aLng, bLat, bLng) {
   const R = 6371000, r = (d) => (d * Math.PI) / 180;
   const s = Math.sin(r(bLat - aLat) / 2) ** 2 +
@@ -57,31 +65,81 @@ async function getJSON(url, opts = {}, ms = 4000) {
   } finally { clearTimeout(t); }
 }
 
-// ---- 1. places (TomTom) ---------------------------------------------------
+// ---------------------------------------------------------------- hours
+// Philadelphia "now" in minutes, on the same scale as TomTom's local times.
+function phillyNow() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date()).map((x) => [x.type, x.value]));
+  return stamp(`${p.year}-${p.month}-${p.day}`, +p.hour, +p.minute);
+}
+function stamp(date, hour, minute) {
+  return Math.floor(Date.parse(date + "T00:00:00Z") / 60000) + hour * 60 + minute;
+}
+function clock(t) {
+  const m = ((t % 1440) + 1440) % 1440, h = Math.floor(m / 60), mm = m % 60;
+  return (h % 12 || 12) + (mm ? ":" + String(mm).padStart(2, "0") : "") + (h < 12 ? " AM" : " PM");
+}
+// -> { open: true | false | null (unknown), closesIn (minutes), label }
+function hoursState(oh, now) {
+  const ranges = oh && Array.isArray(oh.timeRanges) ? oh.timeRanges : null;
+  if (!ranges || !ranges.length) return { open: null, closesIn: null, label: "Hours unknown" };
+  let next = null;
+  for (const r of ranges) {
+    if (!r.startTime || !r.endTime) continue;
+    const s = stamp(r.startTime.date, r.startTime.hour, r.startTime.minute);
+    const e = stamp(r.endTime.date, r.endTime.hour, r.endTime.minute);
+    if (s <= now && now < e) {
+      return { open: true, closesIn: e - now,
+        label: e - s >= 23 * 60 + 30 ? "Open 24 hours" : "Open · closes " + clock(e) };
+    }
+    if (s > now && (next === null || s < next)) next = s;
+  }
+  return { open: false, closesIn: 0, label: next ? "Closed · opens " + clock(next) : "Closed" };
+}
+
+// ---------------------------------------------------------------- TomTom
 async function nearbyPlaces(key, radius) {
   const base = "https://api.tomtom.com/search/2/nearbySearch/.json?key=" + key +
-    "&lat=" + STOP.lat + "&lon=" + STOP.lng + "&radius=" + radius + "&limit=100";
+    "&lat=" + STOP.lat + "&lon=" + STOP.lng + "&radius=" + radius +
+    "&limit=100&openingHours=nextSevenDays";
   let j = await getJSON(base + "&categorySet=" + CATEGORY_SET);
   if (!j.results || !j.results.length) j = await getJSON(base);
+  const now = phillyNow();
   const seen = new Set(), out = [];
   for (const x of j.results || []) {
     const poi = x.poi || {};
     const code = (poi.classifications && poi.classifications[0] && poi.classifications[0].code) || "";
-    const bucket = BUCKET[code];
-    if (!bucket || !poi.name || seen.has(poi.name)) continue;
+    const kind = KIND[code];
+    if (!kind || !poi.name || seen.has(poi.name)) continue;
     seen.add(poi.name);
+    const h = hoursState(poi.openingHours, now);
     out.push({
-      name: poi.name,
-      bucket,
+      name: poi.name, kind,
       category: (poi.categories && poi.categories[0]) || code.toLowerCase(),
-      lat: x.position.lat,
-      lon: x.position.lon,
+      lat: x.position.lat, lon: x.position.lon,
+      walk: walkMin(x.position.lat, x.position.lon),
+      open: h.open, closesIn: h.closesIn, hours: h.label,
     });
   }
   return out;
 }
 
-// ---- 2. context the AI reads ---------------------------------------------
+async function walkRoute(key, lat, lon) {
+  const url = "https://api.tomtom.com/routing/1/calculateRoute/" +
+    STOP.lat + "," + STOP.lng + ":" + lat + "," + lon +
+    "/json?travelMode=pedestrian&routeType=shortest&key=" + key;
+  const j = await getJSON(url, {}, 3500);
+  const r = j.routes[0];
+  return {
+    walk: Math.max(1, Math.ceil(r.summary.travelTimeInSeconds / 60)),
+    meters: r.summary.lengthInMeters,
+    path: r.legs[0].points.map((p) => [p.latitude, p.longitude]),
+  };
+}
+
+// ---------------------------------------------------------------- context
 async function weatherLine() {
   try {
     const j = await getJSON("https://api.weather.gov/gridpoints/PHI/50,79/forecast/hourly",
@@ -98,20 +156,16 @@ function localTime() {
   });
 }
 
-// ---- 3. the AI step -------------------------------------------------------
-const SYSTEM = `You are the brain of a bus-stop screen at 11th & Walnut St, Philadelphia.
-A rider just tapped the bus they are waiting for. They have a few minutes to kill.
-Pick exactly 3 things they could do nearby and still be back in time.
-
+// ---------------------------------------------------------------- AI
+const SYSTEM = `You are the brain of a bus-stop screen at 11th & Walnut St, Philadelphia (Center City, near Midtown Village, Washington Square, Jefferson Station, Reading Terminal Market).
+You pick places for a rider standing at the stop. You only choose from the numbered list you are given.
 Rules:
-- Round trip must fit: 2 x walk + dwell <= budget. "walk" is given per place. You choose "dwell" (minutes spent there).
-- Make the 3 options different kinds when possible: one "eat", one "shop", one "see".
-- Read the situation: time of day (don't suggest a bar at 9am or a museum that's surely closed at 11pm), weather (rain -> closer places, indoors), how long the wait is (short wait -> quick grab; long wait -> something to browse).
-- If the bus is delayed, you may say so warmly in "note".
-- "pitch": max 60 characters, concrete, what to do there (e.g. "Grab a soft pretzel at the Amish counter"). No made-up facts about prices or menus you can't know; keep it generic if unsure.
-- "note": one short sentence (max 70 chars) framing the moment for the rider.
-Reply with JSON only:
-{"note":"...","options":[{"id":<number>,"dwell":<minutes>,"pitch":"..."}]}`;
+- Use the opening hours given. Never pick one marked Closed. "Hours unknown" is fine for parks, landmarks and public spaces; for shops and restaurants prefer ones confirmed open.
+- Read the situation: time of day, weather (rain -> closer and indoors), day of week.
+- Prefer local, independent places over national chains when the choice is close.
+- "pitch": max 60 characters, concrete, what to do there. Don't invent prices, menus or facts you can't know - keep it generic if unsure.
+- "note": one short friendly sentence (max 70 chars) for the rider.
+Reply with JSON only: {"note":"...","options":[{"id":<number>,"dwell":<minutes>,"pitch":"..."}]}`;
 
 async function askDeepSeek(key, user) {
   const j = await getJSON("https://api.deepseek.com/chat/completions", {
@@ -119,148 +173,152 @@ async function askDeepSeek(key, user) {
     headers: { "content-type": "application/json", authorization: "Bearer " + key },
     body: JSON.stringify({
       model: process.env.DEEPSEEK_MODEL || "deepseek-flash",
-      max_tokens: 400,
+      max_tokens: 500,
       response_format: { type: "json_object" },
       thinking: { type: "disabled" },
       messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }],
     }),
-  }, 8000);
+  }, 9000);
   return (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "";
 }
-
-async function askAI(ctx, candidates) {
-  const list = candidates.map((c, i) =>
-    `${i}. ${c.name} | ${c.bucket} | ${c.category} | walk ${c.walk} min`).join("\n");
-  const user =
-    `Bus ${ctx.route} arrives in ${ctx.minutes} min${ctx.late ? ` (running ${ctx.late} min late)` : ""}.\n` +
-    `Budget (must be back ${BUFFER_MIN} min early): ${ctx.budget} min.\n` +
-    `Local time: ${ctx.time}. Weather: ${ctx.weather}.\n\nPlaces:\n${list}`;
-
-  if (process.env.DEEPSEEK_API_KEY) {
-    const text = await askDeepSeek(process.env.DEEPSEEK_API_KEY.trim(), user);
-    const m = text.match(/\{[\s\S]*\}/);
-    return m ? JSON.parse(m[0]) : null;
-  }
-
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return null;
+async function askClaude(key, user) {
   const j = await getJSON("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": key.trim(),
-      "anthropic-version": "2023-06-01",
-    },
+    headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({
       model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5",
-      max_tokens: 400,
-      system: SYSTEM,
+      max_tokens: 500, system: SYSTEM,
       messages: [{ role: "user", content: user }],
     }),
-  }, 7000);
-  const text = (j.content || []).map((b) => b.text || "").join("");
+  }, 9000);
+  return (j.content || []).map((b) => b.text || "").join("");
+}
+async function askAI(user) {
+  const ds = (process.env.DEEPSEEK_API_KEY || "").trim();
+  const an = (process.env.ANTHROPIC_API_KEY || "").trim();
+  if (!ds && !an) return null;
+  const text = ds ? await askDeepSeek(ds, user) : await askClaude(an, user);
   const m = text.match(/\{[\s\S]*\}/);
   return m ? JSON.parse(m[0]) : null;
 }
+const listFor = (cands) => cands.map((c, i) =>
+  `${i}. ${c.name} | ${c.kind} | ${c.category} | walk ${c.walk} min | ${c.hours}`).join("\n");
 
-// Rule-based stand-in when the AI is unavailable: closest place per kind.
-function rulePick(candidates, budget) {
+// Stand-in when the AI is unavailable: nearest open place of each kind.
+function rulePick(cands, kinds, dwellFor) {
   const out = [];
-  for (const b of ["eat", "shop", "see"]) {
-    const c = candidates.map((x, i) => ({ ...x, id: i })).filter((x) => x.bucket === b)[0];
-    if (c) out.push({ id: c.id, dwell: Math.min(8, budget - 2 * c.walk), pitch: "" });
+  const want = kinds.length === 1 ? [kinds[0], kinds[0], kinds[0]] : kinds;
+  for (const k of want) {
+    const i = cands.findIndex((c, idx) => c.kind === k && !out.some((o) => o.id === idx));
+    if (i >= 0) out.push({ id: i, dwell: dwellFor(cands[i]), pitch: "" });
   }
   return { note: "", options: out };
 }
 
-// ---- 4. real walking route (TomTom) --------------------------------------
-async function walkRoute(key, lat, lon) {
-  const url = "https://api.tomtom.com/routing/1/calculateRoute/" +
-    STOP.lat + "," + STOP.lng + ":" + lat + "," + lon +
-    "/json?travelMode=pedestrian&routeType=shortest&key=" + key;
-  const j = await getJSON(url, {}, 3500);
-  const r = j.routes[0];
-  return {
-    walk: Math.max(1, Math.ceil(r.summary.travelTimeInSeconds / 60)),
-    path: r.legs[0].points.map((p) => [p.latitude, p.longitude]),
-  };
-}
-
+// ---------------------------------------------------------------- handler
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   const q = req.query || {};
-  const route = String(q.route || "21");
-  const minutes = Math.max(0, parseInt(q.minutes, 10) || 0);
-  const late = parseInt(q.late, 10) || 0;
-  const budget = minutes - BUFFER_MIN;
-
-  if (budget < MIN_BUDGET) {
-    return res.status(200).json({
-      route, minutes, budget, stay: true, options: [],
-      note: `Bus ${route} is almost here - better stay put.`,
-    });
-  }
-
+  const mode = String(q.mode || "wait");
   const tomtom = (process.env.TOMTOM_API_KEY || "").trim();
-  const maxWalk = Math.floor((budget - 2) / 2);
-  const radius = Math.min(900, Math.round((maxWalk * WALK_M_PER_MIN) / GRID_FACTOR));
 
   try {
-    let places, sample = false;
-    try {
-      places = tomtom ? await nearbyPlaces(tomtom, radius) : null;
-    } catch { places = null; }
-    if (!places || !places.length) { places = SAMPLE; sample = true; }
-
-    // Hard filter first: only places where a round trip + minimum stay fits.
-    const candidates = places
-      .map((p) => ({ ...p, walk: walkMin(p.lat, p.lon) }))
-      .filter((p) => 2 * p.walk + MIN_DWELL[p.bucket] <= budget)
-      .sort((a, b) => a.walk - b.walk)
-      .slice(0, 24);
-
-    if (!candidates.length) {
-      return res.status(200).json({
-        route, minutes, budget, stay: true, options: [], sample,
-        note: `Nothing fits in ${budget} minutes - the ${route} is close.`,
-      });
+    // ---- one walking route (for the landmarks already pinned on the map)
+    if (mode === "route") {
+      const lat = parseFloat(q.lat), lon = parseFloat(q.lon);
+      if (!isFinite(lat) || !isFinite(lon)) return res.status(400).json({ error: "lat/lon" });
+      if (!tomtom) return res.status(200).json({ walk: walkMin(lat, lon), path: null });
+      try { return res.status(200).json(await walkRoute(tomtom, lat, lon)); }
+      catch { return res.status(200).json({ walk: walkMin(lat, lon), path: null }); }
     }
 
-    const ctx = { route, minutes, late, budget, time: localTime(), weather: await weatherLine() };
-    let pick = null, ai = false;
-    try { pick = await askAI(ctx, candidates); ai = !!pick; } catch { pick = null; }
-    if (!pick || !Array.isArray(pick.options)) pick = rulePick(candidates, budget);
+    if (!tomtom) return res.status(200).json({ error: "no TomTom key", options: [] });
 
-    // Check the AI's picks against real walking routes; trim or drop what doesn't fit.
-    const used = new Set();
-    const picks = [];
+    const route = String(q.route || "");
+    const minutes = Math.max(0, parseInt(q.minutes, 10) || 0);
+    const late = parseInt(q.late, 10) || 0;
+    const cat = CATS[q.cat] ? String(q.cat) : "food";
+    const budget = minutes - BUFFER_MIN;
+
+    if (mode === "wait" && budget < MIN_BUDGET) {
+      return res.status(200).json({ mode, route, minutes, stay: true, options: [],
+        note: `Bus ${route} is almost here - better stay put.` });
+    }
+
+    const radius = mode === "wait"
+      ? Math.min(900, Math.round((Math.floor((budget - 2) / 2) * WALK_M_PER_MIN) / GRID_FACTOR))
+      : EXPLORE_RADIUS;
+    const places = await nearbyPlaces(tomtom, radius);
+
+    // Hard filters - rules, not AI judgement.
+    let cands = places.filter((p) => p.open !== false);
+    if (mode === "wait") {
+      cands = cands.filter((p) => 2 * p.walk + MIN_DWELL[p.kind] <= budget &&
+        (p.closesIn === null || p.closesIn >= p.walk + MIN_DWELL[p.kind]));
+    } else {
+      cands = cands.filter((p) => CATS[cat].kinds.includes(p.kind) &&
+        (p.closesIn === null || p.closesIn >= p.walk + 10));
+    }
+    cands.sort((a, b) => (b.open === true) - (a.open === true) || a.walk - b.walk);
+    cands = cands.slice(0, 30);
+
+    if (!cands.length) {
+      const closed = places.filter((p) => p.open === false).length;
+      return res.status(200).json({ mode, route, minutes, cat, stay: true, options: [],
+        note: closed ? "Everything nearby is closed right now." : "Nothing nearby fits right now." });
+    }
+
+    const time = localTime(), weather = await weatherLine();
+    let user;
+    if (mode === "wait") {
+      user = `The rider is waiting for bus ${route}, arriving in ${minutes} min` +
+        (late ? ` (running ${late} min late)` : "") + `.\n` +
+        `They must be back ${BUFFER_MIN} min early, so the budget is ${budget} min.\n` +
+        `Pick exactly 3 places, different kinds if possible (eat / shop / see).\n` +
+        `Round trip must fit: 2 x walk + dwell <= ${budget}. You choose "dwell" in minutes.\n` +
+        `Short wait -> quick grab. Longer wait -> something to browse.\n`;
+    } else {
+      user = `The rider tapped "Explore nearby" -> "${cat}". Pick ${CATS[cat].ask}.\n` +
+        `Set "dwell" to a sensible visit length in minutes.\n`;
+    }
+    user += `Local time: ${time}. Weather: ${weather}.\n\nPlaces:\n${listFor(cands)}`;
+
+    let pick = null, ai = false;
+    try { pick = await askAI(user); ai = !!(pick && Array.isArray(pick.options)); } catch { pick = null; }
+    if (!ai) {
+      pick = rulePick(cands, mode === "wait" ? ["eat", "shop", "see"] : CATS[cat].kinds,
+        (c) => mode === "wait" ? Math.min(8, budget - 2 * c.walk) : 20);
+    }
+
+    // Check every pick against a real walking route.
+    const used = new Set(), picks = [];
     for (const o of pick.options) {
       const id = Number(o.id);
-      if (!candidates[id] || used.has(id)) continue;
+      if (!cands[id] || used.has(id)) continue;
       used.add(id);
-      picks.push({ o, c: candidates[id] });
+      picks.push({ o, c: cands[id] });
     }
     const checked = await Promise.all(picks.slice(0, 4).map(async ({ o, c }) => {
       let walk = c.walk, path = null;
-      if (tomtom && !sample) {
-        try { ({ walk, path } = await walkRoute(tomtom, c.lat, c.lon)); } catch {}
+      try { ({ walk, path } = await walkRoute(tomtom, c.lat, c.lon)); } catch {}
+      let dwell = Math.max(1, Math.round(Number(o.dwell) || 0));
+      if (mode === "wait") {
+        dwell = Math.min(dwell, budget - 2 * walk);
+        if (c.closesIn !== null) dwell = Math.min(dwell, c.closesIn - walk);
+        if (dwell < MIN_DWELL[c.kind] - 1) return null;
       }
-      const room = budget - 2 * walk;
-      const dwell = Math.min(Math.max(1, Math.round(Number(o.dwell) || 0)), room);
-      if (dwell < MIN_DWELL[c.bucket] - 1) return null;
       return {
-        name: c.name, bucket: c.bucket, category: c.category,
-        lat: c.lat, lon: c.lon, walk, dwell,
-        pitch: String(o.pitch || "").slice(0, 70),
-        path,
+        name: c.name, kind: c.kind, category: c.category, lat: c.lat, lon: c.lon,
+        walk, dwell, hours: c.hours, open: c.open,
+        pitch: String(o.pitch || "").slice(0, 70), path,
       };
     }));
     const options = checked.filter(Boolean).slice(0, 3);
 
     res.status(200).json({
-      route, minutes, budget, late, ai, sample,
+      mode, route, minutes, budget, late, cat, ai,
       note: String(pick.note || "").slice(0, 80),
-      context: { time: ctx.time, weather: ctx.weather },
+      context: { time, weather },
       options,
     });
   } catch (err) {
