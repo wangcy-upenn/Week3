@@ -89,6 +89,8 @@ function planFor(lm, stops) {
   for (const route of ROUTES) {
     for (const s of stops[route] || []) {
       if (s.lng > STOP.lng - WEST_MARGIN) continue; // buses here only go west
+            // In Center City, Chestnut St stops are the EASTBOUND side - a westbound rider never stops there.
+      if (/^Chestnut St/i.test(s.name) && s.lng > -75.1800) continue;
       const after = walkMin(s.lat, s.lng, lat, lng);
       if (after > MAX_WALK_AFTER) continue;
       const ride = Math.max(1, Math.ceil((haversine(STOP.lat, STOP.lng, s.lat, s.lng) * BUS_GRID) / BUS_M_PER_MIN));
