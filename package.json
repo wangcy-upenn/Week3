@@ -1,0 +1,11 @@
+{
+  "name": "from-here",
+  "version": "1.0.0",
+  "private": true,
+  "description": "From Here - a bus shelter screen for 11th & Walnut St, Philadelphia. IPD 5900 Street Interface, week 2.",
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  }
+}
