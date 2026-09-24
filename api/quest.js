@@ -129,13 +129,18 @@ async function nearbyPlaces(key, radius) {
 async function walkRoute(key, lat, lon) {
   const url = "https://api.tomtom.com/routing/1/calculateRoute/" +
     STOP.lat + "," + STOP.lng + ":" + lat + "," + lon +
-    "/json?travelMode=pedestrian&routeType=shortest&key=" + key;
+        "/json?travelMode=pedestrian&routeType=shortest&instructionsType=text&language=en-US&key=" + key;
   const j = await getJSON(url, {}, 3500);
   const r = j.routes[0];
+  // Turn-by-turn text, e.g. "Turn right onto South 12th Street". Keep it short for a street screen.
+  const ins = (r.guidance && r.guidance.instructions) || [];
+  const steps = ins.map((i) => String(i.message || "").replace(/<[^>]+>/g, "").trim())
+    .filter(Boolean).slice(0, 5);
   return {
     walk: Math.max(1, Math.ceil(r.summary.travelTimeInSeconds / 60)),
     meters: r.summary.lengthInMeters,
     path: r.legs[0].points.map((p) => [p.latitude, p.longitude]),
+    steps,
   };
 }
 
