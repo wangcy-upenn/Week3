@@ -1,22 +1,26 @@
+<!doctype html>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>From Here</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   :root{
     --sign:#2A2D63; --screen:#000; --line:#23262B; --chip:#4A5058;
     --amber:#F2B233; --blue:#4C93F0; --red:#E33B3B;
+    --eat:#F0A93C; --shop:#E07BB0; --see:#A874D8;
   }
   *{ box-sizing:border-box; margin:0; }
   html,body{ height:100%; }
-  body{
-    background:#0A0A0B; color:#fff; font-family:"Barlow",system-ui,sans-serif;
-    display:flex; justify-content:center; overflow:hidden;
-    -webkit-font-smoothing:antialiased; user-select:none; -webkit-user-select:none;
-  }
+  body{ background:#0A0A0B; color:#fff; font-family:"Barlow",system-ui,sans-serif;
+        display:flex; justify-content:center; overflow:hidden;
+        -webkit-font-smoothing:antialiased; user-select:none; -webkit-user-select:none; }
   #unit{ width:100%; max-width:540px; height:100%; display:flex; flex-direction:column; background:var(--screen); }
 
+  /* ---- sign + arrivals (unchanged from prototype A) ---- */
   .sign{ flex:0 0 auto; background:var(--sign); display:flex; align-items:center; gap:12px;
          padding:clamp(7px,1.3vh,12px) clamp(12px,3vw,20px); }
   .sign .bus{ flex:0 0 auto; width:26px; height:26px; }
@@ -26,149 +30,132 @@
   .sign .id{ margin-left:auto; text-align:right; line-height:1.15; text-transform:uppercase;
              font-family:"Barlow Condensed",sans-serif; font-weight:500;
              font-size:clamp(9.5px,1.3vh,12px); letter-spacing:.11em; color:#B9BCE4; }
-
-.lv{ display:inline-block; font-weight:600; letter-spacing:.1em; color:#8E92C9; }
+  .lv{ display:inline-block; font-weight:600; letter-spacing:.1em; color:#8E92C9; }
   .lv.on{ color:#7BE0A0; }
-  .arrivals{ flex:0 0 auto; padding:clamp(4px,.9vh,9px) clamp(9px,2.4vw,14px) clamp(6px,1.1vh,10px); }
-  .row{ display:flex; align-items:center; gap:clamp(6px,1.6vw,11px);
-        padding:clamp(4px,.95vh,9px) clamp(4px,1.4vw,8px); border-bottom:1px solid var(--line); }
+  .arrivals{ flex:0 0 auto; padding:clamp(3px,.7vh,8px) clamp(9px,2.4vw,14px) 0; }
+  .row{ display:flex; align-items:center; gap:clamp(6px,1.6vw,11px); cursor:pointer; border-radius:6px;
+        padding:clamp(3px,.8vh,8px) clamp(4px,1.4vw,8px); border-bottom:1px solid var(--line);
+        transition:background .2s ease, opacity .2s ease; }
   .row:last-child{ border-bottom:0; }
-  .chip{ flex:0 0 auto; min-width:clamp(34px,5vw,44px); text-align:center;
-         padding:clamp(2px,.4vh,4px) 7px; border-radius:5px; background:var(--chip);
-         font-family:"Barlow Condensed",sans-serif; font-weight:700;
+  .row:hover{ background:rgba(255,255,255,.04); }
+  .row.sel{ background:rgba(242,178,51,.14); box-shadow:inset 3px 0 0 var(--amber); }
+  body.busy .row:not(.sel){ opacity:.45; }
+  .chip{ flex:0 0 auto; min-width:clamp(34px,5vw,44px); text-align:center; padding:clamp(2px,.4vh,4px) 7px;
+         border-radius:5px; background:var(--chip); font-family:"Barlow Condensed",sans-serif; font-weight:700;
          font-size:clamp(16px,2.2vh,21px); line-height:1.15; }
   .dest{ flex:1 1 auto; min-width:0; font-weight:600; font-size:clamp(13px,1.9vh,18px);
          white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-
-  /* Red pill, white text, sitting immediately to the LEFT of the amber L. */
-  .delay{ flex:0 0 auto; display:none; background:var(--red); color:#fff;
-          border-radius:999px; padding:clamp(1px,.35vh,4px) clamp(6px,1.5vw,10px);
-          font-family:"Barlow Condensed",sans-serif; font-weight:700; line-height:1.15;
-          font-size:clamp(10px,1.4vh,13px); letter-spacing:.09em; text-transform:uppercase; }
+  .delay{ flex:0 0 auto; display:none; background:var(--red); color:#fff; border-radius:999px;
+          padding:clamp(1px,.35vh,4px) clamp(6px,1.5vw,10px); font-family:"Barlow Condensed",sans-serif;
+          font-weight:700; line-height:1.15; font-size:clamp(10px,1.4vh,13px); letter-spacing:.09em; text-transform:uppercase; }
   .row.late .delay{ display:block; }
-
-  .live{ flex:0 0 auto; width:clamp(12px,1.6vh,16px); height:clamp(12px,1.6vh,16px);
-         border-radius:3px; background:var(--amber); display:grid; place-items:center; }
+  .live{ flex:0 0 auto; width:clamp(12px,1.6vh,16px); height:clamp(12px,1.6vh,16px); border-radius:3px;
+         background:var(--amber); display:grid; place-items:center; }
   .live::after{ content:""; width:38%; height:60%; border:2px solid #14161A; border-top:0; border-right:0; }
   .eta{ flex:0 0 auto; text-align:center; min-width:clamp(36px,5vw,44px); }
-  .eta .n{ display:block; color:var(--amber); font-family:"Barlow Condensed",sans-serif;
-           font-weight:700; font-size:clamp(22px,3.3vh,32px); line-height:.92; font-variant-numeric:tabular-nums; }
-  .eta .u{ display:block; color:var(--amber); opacity:.8; font-family:"Barlow Condensed",sans-serif;
-           font-weight:500; font-size:clamp(10px,1.3vh,13px); letter-spacing:.1em; text-transform:uppercase; }
+  .eta .n{ display:block; color:var(--amber); font-family:"Barlow Condensed",sans-serif; font-weight:700;
+           font-size:clamp(22px,3.3vh,32px); line-height:.92; font-variant-numeric:tabular-nums; }
+  .eta .u{ display:block; color:var(--amber); opacity:.8; font-family:"Barlow Condensed",sans-serif; font-weight:500;
+           font-size:clamp(10px,1.3vh,13px); letter-spacing:.1em; text-transform:uppercase; }
   .row.arriving .eta .n{ font-size:clamp(15px,2.2vh,20px); letter-spacing:.08em; line-height:1.3; }
-  .row.arriving .eta .u{ display:none; }
+  .row.arriving .eta .u, .row.arriving .delay{ display:none; }
   .row.arriving .chip{ background:var(--amber); color:#101216; }
-  .row.arriving .delay{ display:none; }
 
-  .stage{ flex:1 1 auto; position:relative; min-height:0;
-          margin:0 clamp(9px,2.4vw,14px) clamp(6px,1.1vh,10px);
-          border-radius:10px; overflow:hidden; background:#333A47; transition:opacity .5s ease; }
-  .stage svg{ position:absolute; inset:0; width:100%; height:100%; }
+  /* ---- the two big buttons ---- */
+  .actions{ flex:0 0 auto; display:grid; grid-template-columns:1fr 1fr; gap:clamp(6px,1.5vw,10px);
+            padding:clamp(6px,1.1vh,10px) clamp(9px,2.4vw,14px); }
+  .big{ font:inherit; color:#fff; text-align:left; cursor:pointer; border-radius:12px;
+        padding:clamp(8px,1.3vh,13px) clamp(10px,2.4vw,14px); display:flex; gap:10px; align-items:center;
+        border:1.5px solid #3A3F48; background:#15181D; transition:border-color .2s, background .2s; }
+  .big:hover{ border-color:#5A606B; }
+  .big.on{ border-color:var(--amber); background:#2A2210; }
+  .big .ic{ flex:0 0 auto; width:clamp(30px,4.2vh,38px); height:clamp(30px,4.2vh,38px); border-radius:50%;
+            display:grid; place-items:center; font-size:clamp(16px,2.3vh,20px); }
+  .big.wait .ic{ background:rgba(242,178,51,.18); }
+  .big.explore .ic{ background:rgba(168,116,216,.2); }
+  .big .t{ font-weight:700; font-size:clamp(15px,2.1vh,19px); line-height:1.1; }
+  .big .s{ font-size:clamp(11px,1.45vh,13px); color:#9AA2AD; margin-top:2px; }
 
-  .st{ fill:#A3ACBB; font-family:"Barlow",sans-serif; font-weight:600; font-size:9.2px;
-       letter-spacing:.35px; paint-order:stroke; stroke:#333A47; stroke-width:2.6; stroke-linejoin:round; }
+  /* ---- real map ---- */
+  .stage{ flex:1 1 auto; position:relative; min-height:0; margin:0 clamp(9px,2.4vw,14px) clamp(6px,1.1vh,10px);
+          border-radius:10px; overflow:hidden; background:#1B1E24; transition:opacity .5s ease; }
+  #map{ position:absolute; inset:0; background:#1B1E24; }
+  .leaflet-container{ font-family:"Barlow",sans-serif; }
+  .leaflet-control-attribution{ background:rgba(0,0,0,.55)!important; color:#8A919C!important; font-size:9px!important; }
+  .leaflet-control-attribution a{ color:#AEB6C2!important; }
+  .me{ width:18px; height:18px; border-radius:50%; background:#2E7DF0; border:3px solid #fff;
+       box-shadow:0 0 0 10px rgba(76,147,240,.25); }
+  .melbl{ color:#fff; font-weight:700; font-size:13px; white-space:nowrap; text-shadow:0 1px 3px #000,0 0 6px #000; }
+  .lm{ display:inline-flex; align-items:center; gap:7px; padding:5px 10px 5px 6px; border-radius:9px; white-space:nowrap;
+       background:rgba(17,21,28,.92); border:1.4px solid #5A6474; cursor:pointer; transition:opacity .3s; }
+  .lm i{ width:14px; height:14px; border-radius:50%; border:2px solid #11151C; flex:0 0 auto; }
+  .lm b{ font-size:13.5px; color:#fff; } .lm small{ font-size:11.5px; color:#AEB7C4; font-weight:600; }
+  .lm.food i{ background:#F0A93C; } .lm.transit i{ background:#4C93F0; } .lm.park i{ background:#5AA469; }
+  .lm.arts i{ background:#A874D8; } .lm.civic i{ background:#C3A469; }
+  .lm.on{ background:#fff; border-color:#fff; } .lm.on b{ color:#15202C; } .lm.on small{ color:#4E5B68; }
+  body.busy .lm:not(.on){ opacity:.12; pointer-events:none; }
+  .pin{ width:32px; height:32px; border-radius:50%; display:grid; place-items:center; border:3px solid #fff;
+        font-family:"Barlow Condensed",sans-serif; font-weight:700; font-size:18px; color:#11151C; cursor:pointer;
+        box-shadow:0 2px 8px rgba(0,0,0,.6); transition:opacity .3s, transform .3s; }
+  .pin.eat{ background:var(--eat); } .pin.shop{ background:var(--shop); } .pin.see{ background:var(--see); }
+  .pin.dim{ opacity:.3; } .pin.on{ transform:scale(1.2); }
 
-  .poi{ cursor:pointer; transition:opacity .35s ease; }
-  .poi .pill{ fill:rgba(17,21,28,.9); stroke:#5A6474; stroke-width:1.4; }
-  .poi .ico{ stroke:#11151C; stroke-width:1.6; }
-  .poi .gl{ fill:#fff; }
-  .poi .anchor{ fill:#11151C; stroke:#fff; stroke-width:2.4; }
-  .poi .nm{ font-family:"Barlow",sans-serif; font-weight:700; font-size:22px; fill:#fff; }
-  .poi .mn{ font-family:"Barlow",sans-serif; font-weight:600; font-size:16.5px; fill:#AEB7C4; }
-  .poi.food .ico{ fill:#F0A93C; } .poi.food .pill{ stroke:#8A6524; }
-  .poi.transit .ico{ fill:#4C93F0; } .poi.transit .pill{ stroke:#2E5A94; }
-  .poi.park .ico{ fill:#5AA469; } .poi.park .pill{ stroke:#3A6B45; }
-  .poi.arts .ico{ fill:#A874D8; } .poi.arts .pill{ stroke:#65478A; }
-  .poi.civic .ico{ fill:#C3A469; } .poi.civic .pill{ stroke:#7A683F; }
-  .poi:hover .pill{ fill:rgba(30,38,50,.96); }
-  .stage.picking .poi:not(.on){ opacity:.2; }
-  .poi.on .pill{ fill:#fff; stroke:#fff; stroke-width:2.6; }
-  .poi.on .nm{ fill:#15202C; } .poi.on .mn{ fill:#4E5B68; }
-  .poi.on .anchor{ fill:#fff; stroke:#2E7DF0; stroke-width:3.4; }
-
-  .rt{ fill:none; stroke:#3E8BEE; stroke-width:7.5; stroke-linecap:round; stroke-linejoin:round;
-       opacity:0; transition:opacity .3s ease; }
-  .rtc{ fill:none; stroke:#16407A; stroke-width:12; stroke-linecap:round; stroke-linejoin:round;
-        opacity:0; transition:opacity .3s ease; }
-  .rt.on,.rtc.on{ opacity:1; }
-  .rt{ stroke-width:7.5; }
-
-  .halo{ fill:rgba(76,147,240,.22); }
-  .me{ fill:#2E7DF0; stroke:#fff; stroke-width:3; }
-  .melbl{ fill:#fff; font-family:"Barlow",sans-serif; font-weight:700; font-size:15px;
-          paint-order:stroke; stroke:#2B313D; stroke-width:3.4; }
-
-  .card{ position:absolute; left:0; right:0; bottom:0; background:#fff; color:#1E2830;
-         border-top:1px solid #E2DED6; box-shadow:0 -8px 22px -14px rgba(0,0,0,.6);
-         padding:clamp(11px,2vh,18px) clamp(13px,3.4vw,20px) clamp(9px,1.5vh,15px);
+  /* ---- bottom card ---- */
+  .card{ position:absolute; left:0; right:0; bottom:0; z-index:500; background:#fff; color:#1E2830;
+         box-shadow:0 -8px 22px -14px rgba(0,0,0,.6); border-radius:14px 14px 0 0;
+         padding:clamp(11px,1.8vh,16px) clamp(13px,3.4vw,18px) clamp(9px,1.4vh,13px);
          transform:translateY(103%); transition:transform .42s cubic-bezier(.2,.7,.3,1);
-         display:flex; flex-direction:column; gap:clamp(5px,1vh,10px); }
+         display:flex; flex-direction:column; gap:clamp(6px,1vh,9px); max-height:78%; overflow:auto; }
   .card.up{ transform:translateY(0); }
-  .card h2{ font-family:"Barlow Condensed",sans-serif; font-weight:700;
-            font-size:clamp(18px,2.5vh,24px); letter-spacing:.09em; text-transform:uppercase; color:#1B5FBF; }
-  .opt .a{ font-weight:700; font-size:clamp(16px,2.3vh,21px); }
-  .opt .b{ font-size:clamp(11.5px,1.5vh,14px); color:#69737D; margin-top:1px; }
-  .hr{ height:1px; background:#E7E3DB; }
-  .bar{ height:3px; background:#E6E9ED; border-radius:2px; overflow:hidden; margin-top:2px; }
-  .bar i{ display:block; height:100%; background:var(--blue); width:100%; transform-origin:left; }
-
-  .foot{ flex:0 0 auto; display:flex; justify-content:space-between; align-items:center; gap:12px;
-         padding:0 clamp(12px,3vw,18px) clamp(7px,1.2vh,12px);
-         font-family:"Barlow Condensed",sans-serif; letter-spacing:.14em; text-transform:uppercase;
-         font-size:clamp(9.5px,1.3vh,12px); color:#5A6069; }
-  #hint{ transition:opacity .3s ease; }
-  body.arriving .stage{ opacity:.16; }
-  body.arriving #hint{ opacity:0; }
-  /* ---- Side Quest (week 3) ---- */
-  [hidden]{ display:none!important; }
-  .stage svg{ transition:transform .45s cubic-bezier(.2,.7,.3,1); }
-  .stage.questing svg{ transform:translateY(-24%); }
-  .row{ cursor:pointer; border-radius:6px; transition:background .2s ease; }
-  .row:hover{ background:rgba(255,255,255,.04); }
-  .row.sel{ background:rgba(242,178,51,.14); box-shadow:inset 3px 0 0 var(--amber); }
-  body.questing .row:not(.sel){ opacity:.45; }
-  .stage.questing .poi{ opacity:.1; pointer-events:none; }
-  .qpin{ cursor:pointer; }
-  .qpin circle{ stroke:#fff; stroke-width:3; }
-  .qpin text{ fill:#11151C; font-family:"Barlow Condensed",sans-serif; font-weight:700; font-size:22px; }
-  .qpin.eat circle{ fill:#F0A93C; } .qpin.shop circle{ fill:#E07BB0; } .qpin.see circle{ fill:#A874D8; }
-  .qpin.dim{ opacity:.25; }
-  .qpin .ring{ fill:none; stroke:#fff; stroke-width:2; opacity:.0; }
-  .qpin.on .ring{ opacity:.8; }
-
-  .card.q{ gap:clamp(6px,1.1vh,10px); }
-  .q .kick{ font-family:"Barlow Condensed",sans-serif; font-weight:700; font-size:clamp(11px,1.5vh,13px);
-            letter-spacing:.16em; text-transform:uppercase; color:#B7791F; display:flex; gap:8px; align-items:center; }
-  .q .kick .ai{ background:#1E2830; color:#fff; border-radius:4px; padding:1px 6px; letter-spacing:.1em; }
-  .q .note{ font-weight:600; font-size:clamp(14px,2vh,18px); color:#1E2830; line-height:1.25; }
-  .q .note.wait{ color:#69737D; font-weight:500; }
-  .qo{ display:flex; gap:11px; align-items:flex-start; width:100%; text-align:left; font:inherit; color:inherit;
-       background:#F5F3EF; border:1.5px solid transparent; border-radius:10px; cursor:pointer;
-       padding:clamp(7px,1.2vh,11px) 11px; }
-  .qo:hover{ border-color:#D8D2C6; }
-  .qo .num{ flex:0 0 auto; width:26px; height:26px; border-radius:50%; display:grid; place-items:center;
-            font-family:"Barlow Condensed",sans-serif; font-weight:700; font-size:16px; color:#11151C; margin-top:1px; }
-  .qo.eat .num{ background:#F0A93C; } .qo.shop .num{ background:#E07BB0; } .qo.see .num{ background:#A874D8; }
-  .qo .t{ font-weight:700; font-size:clamp(15px,2.1vh,19px); line-height:1.15; }
-  .qo .m{ font-size:clamp(11.5px,1.5vh,13.5px); color:#69737D; margin-top:2px; }
-  .qo .p{ font-size:clamp(12.5px,1.7vh,15px); color:#33404B; margin-top:3px; }
-  .qlist{ display:flex; flex-direction:column; gap:clamp(5px,.9vh,8px); }
+  .kick{ font-family:"Barlow Condensed",sans-serif; font-weight:700; font-size:clamp(11px,1.5vh,13px);
+         letter-spacing:.16em; text-transform:uppercase; color:#B7791F; display:flex; gap:8px; align-items:center; }
+  .kick .ai{ background:#1E2830; color:#fff; border-radius:4px; padding:1px 6px; letter-spacing:.1em; }
+  .kick .x{ margin-left:auto; font:inherit; border:0; background:#EEE9E0; color:#5B6570; border-radius:6px;
+            padding:2px 8px; cursor:pointer; letter-spacing:.1em; }
+  .note{ font-weight:600; font-size:clamp(15px,2.1vh,19px); color:#1E2830; line-height:1.25; }
+  .note.wait{ color:#69737D; font-weight:500; }
+  .list{ display:flex; flex-direction:column; gap:clamp(5px,.9vh,8px); }
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:clamp(6px,1vh,9px); }
+  .opt{ display:flex; gap:11px; align-items:flex-start; width:100%; text-align:left; font:inherit; color:inherit;
+        background:#F5F3EF; border:1.5px solid transparent; border-radius:10px; cursor:pointer;
+        padding:clamp(7px,1.2vh,11px) 11px; }
+  .opt:hover{ border-color:#D8D2C6; }
+  .opt:disabled{ opacity:.45; cursor:default; }
+  .opt .num{ flex:0 0 auto; width:26px; height:26px; border-radius:50%; display:grid; place-items:center;
+             font-family:"Barlow Condensed",sans-serif; font-weight:700; font-size:16px; color:#11151C; margin-top:1px; }
+  .opt.eat .num{ background:var(--eat); } .opt.shop .num{ background:var(--shop); } .opt.see .num{ background:var(--see); }
+  .opt .t{ font-weight:700; font-size:clamp(15px,2.1vh,19px); line-height:1.15; }
+  .opt .m{ font-size:clamp(11.5px,1.5vh,13.5px); color:#69737D; margin-top:2px; }
+  .opt .m .open{ color:#2F8A4C; font-weight:600; }
+  .opt .p{ font-size:clamp(12.5px,1.7vh,15px); color:#33404B; margin-top:3px; }
+  .cat{ flex-direction:column; gap:4px; align-items:flex-start; padding:clamp(10px,1.6vh,14px) 12px; }
+  .cat .e{ font-size:clamp(22px,3vh,28px); line-height:1; }
+  .busbtn .chip{ color:#fff; }
+  .busbtn .eta2{ margin-left:auto; font-family:"Barlow Condensed",sans-serif; font-weight:700; font-size:22px; color:#B7791F; }
   .skel{ height:clamp(52px,7vh,64px); border-radius:10px; background:linear-gradient(90deg,#F1EEE8,#E6E1D8,#F1EEE8);
          background-size:200% 100%; animation:sk 1.2s linear infinite; }
   @keyframes sk{ to{ background-position:-200% 0; } }
-  .qd .name{ font-weight:700; font-size:clamp(20px,2.9vh,27px); line-height:1.1; }
-  .qd .steps{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-weight:600;
-              font-size:clamp(12.5px,1.7vh,15px); color:#33404B; }
-  .qd .steps b{ background:#EEF3FB; color:#1B5FBF; border-radius:5px; padding:2px 7px; }
-  .qd .back{ display:flex; align-items:baseline; gap:10px; background:#1E2830; color:#fff; border-radius:10px;
-             padding:clamp(8px,1.3vh,12px) 14px; }
-  .qd .back .l{ white-space:nowrap; font-family:"Barlow Condensed",sans-serif; font-weight:600; letter-spacing:.14em;
-                text-transform:uppercase; font-size:clamp(12px,1.6vh,14px); color:#F2B233; }
-  .qd .back .v{ font-family:"Barlow Condensed",sans-serif; font-weight:700; font-size:clamp(30px,4.6vh,42px);
-                line-height:1; font-variant-numeric:tabular-nums; white-space:nowrap; }
-  .qd .back .s{ margin-left:auto; font-size:clamp(11px,1.4vh,13px); color:#AEB7C4; text-align:right; }
-  .q .src{ font-size:clamp(10px,1.3vh,12px); color:#8A939C; }
-  .card.q .bar i{ background:var(--amber); }
+  .name{ font-weight:700; font-size:clamp(20px,2.9vh,27px); line-height:1.1; }
+  .hrs{ font-size:clamp(12.5px,1.7vh,15px); font-weight:600; color:#2F8A4C; }
+  .hrs.unk{ color:#8A939C; }
+  .steps{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-weight:600;
+          font-size:clamp(12.5px,1.7vh,15px); color:#33404B; }
+  .steps b{ background:#EEF3FB; color:#1B5FBF; border-radius:5px; padding:2px 7px; }
+  .back{ display:flex; align-items:baseline; gap:10px; background:#1E2830; color:#fff; border-radius:10px;
+         padding:clamp(8px,1.3vh,12px) 14px; }
+  .back .l{ font-family:"Barlow Condensed",sans-serif; font-weight:600; letter-spacing:.14em; text-transform:uppercase;
+            font-size:clamp(12px,1.6vh,14px); color:#F2B233; white-space:nowrap; }
+  .back .v{ font-family:"Barlow Condensed",sans-serif; font-weight:700; font-size:clamp(30px,4.6vh,42px);
+            line-height:1; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .back .s{ margin-left:auto; font-size:clamp(11px,1.4vh,13px); color:#AEB7C4; text-align:right; }
+  .src{ font-size:clamp(10px,1.3vh,12px); color:#8A939C; }
+  .bar{ height:3px; background:#E6E9ED; border-radius:2px; overflow:hidden; flex:0 0 auto; }
+  .bar i{ display:block; height:100%; background:var(--amber); width:100%; transform-origin:left; }
+
+  .foot{ flex:0 0 auto; display:flex; justify-content:space-between; align-items:center; gap:12px;
+         padding:0 clamp(12px,3vw,18px) clamp(7px,1.2vh,12px); font-family:"Barlow Condensed",sans-serif;
+         letter-spacing:.14em; text-transform:uppercase; font-size:clamp(9.5px,1.3vh,12px); color:#5A6069; }
+  body.arriving .stage, body.arriving .actions{ opacity:.16; }
   @media (prefers-reduced-motion:reduce){ *{ animation:none!important; transition:none!important; } }
 </style>
 
@@ -178,628 +165,28 @@
       <rect x="4" y="3" width="16" height="14" rx="3" fill="#fff"/>
       <rect x="6.2" y="5.4" width="11.6" height="5" rx="1" fill="#2A2D63"/>
       <circle cx="8" cy="13.4" r="1.4" fill="#2A2D63"/><circle cx="16" cy="13.4" r="1.4" fill="#2A2D63"/>
-      <rect x="6" y="17" width="3" height="3.4" rx="1" fill="#fff"/>
-      <rect x="15" y="17" width="3" height="3.4" rx="1" fill="#fff"/>
+      <rect x="6" y="17" width="3" height="3.4" rx="1" fill="#fff"/><rect x="15" y="17" width="3" height="3.4" rx="1" fill="#fff"/>
     </svg>
     <div class="routes">9<span>|</span>12<span>|</span>21<span>|</span>42</div>
     <div class="id"><span class="lv" id="lv">&#9675; connecting</span><br>Stop I.D. 14885</div>
   </div>
 
-  <div class="arrivals">
-    <div class="row" id="r9">
-      <div class="chip">9</div><div class="dest">Andorra</div>
-      <div class="delay">Delayed 2 min</div>
-      <div class="live"></div><div class="eta"><span class="n">16</span><span class="u">min</span></div>
-    </div>
-    <div class="row" id="r12">
-      <div class="chip">12</div><div class="dest">50th-Woodland</div>
-      <div class="delay">Delayed 2 min</div>
-      <div class="live"></div><div class="eta"><span class="n">9</span><span class="u">min</span></div>
-    </div>
-    <div class="row" id="r21">
-      <div class="chip">21</div><div class="dest">69th St Transit Center</div>
-      <div class="delay">Delayed 2 min</div>
-      <div class="live"></div><div class="eta"><span class="n">12</span><span class="u">min</span></div>
-    </div>
-    <div class="row" id="r42">
-      <div class="chip">42</div><div class="dest">Wycombe</div>
-      <div class="delay">Delayed 2 min</div>
-      <div class="live"></div><div class="eta"><span class="n">7</span><span class="u">min</span></div>
-    </div>
+  <div class="arrivals" id="arrivals"></div>
+
+  <div class="actions">
+    <button class="big wait" id="bWait"><span class="ic">&#9201;</span>
+      <span><div class="t">Long wait?</div><div class="s">Find something that fits</div></span></button>
+    <button class="big explore" id="bExplore"><span class="ic">&#10024;</span>
+      <span><div class="t">Explore nearby</div><div class="s">Food &middot; sights &middot; shops</div></span></button>
   </div>
 
   <div class="stage" id="stage">
-    <svg viewBox="0 0 700 875" preserveAspectRatio="xMidYMid slice" aria-label="Map centred on 11th &amp; Walnut St">
-      <rect x="0" y="0" width="700" height="875" fill="#333A47"/>
-      <g fill="#3A5C42" stroke="#456B4C" stroke-width="1">
-      <rect x="631.9" y="456.9" width="77.8" height="77.8" rx="3"/>
-      <rect x="313.1" y="663.1" width="27.2" height="27.2" rx="3"/>
-      </g>
-      <g fill="#3E4655">
-      <rect x="-90.0" y="-90.0" width="46.0" height="153.2" rx="1.6"/>
-      <rect x="-90.0" y="66.3" width="46.0" height="68.0" rx="1.6"/>
-      <rect x="-40.9" y="-90.0" width="43.5" height="224.4" rx="1.6"/>
-      <rect x="-90.0" y="157.3" width="61.3" height="31.1" rx="1.6"/>
-      <rect x="-25.6" y="157.3" width="28.2" height="31.1" rx="1.6"/>
-      <rect x="-90.0" y="200.5" width="30.4" height="31.1" rx="1.6"/>
-      <rect x="-56.5" y="200.5" width="21.2" height="31.1" rx="1.6"/>
-      <rect x="-32.3" y="200.5" width="34.8" height="31.1" rx="1.6"/>
-      <rect x="-90.0" y="254.5" width="28.9" height="27.4" rx="1.6"/>
-      <rect x="-58.0" y="254.5" width="60.6" height="27.4" rx="1.6"/>
-      <rect x="-90.0" y="289.7" width="39.9" height="39.1" rx="1.6"/>
-      <rect x="-47.0" y="289.7" width="20.0" height="39.1" rx="1.6"/>
-      <rect x="-23.9" y="289.7" width="26.4" height="39.1" rx="1.6"/>
-      <rect x="-90.0" y="351.8" width="25.9" height="19.6" rx="1.6"/>
-      <rect x="-61.0" y="351.8" width="34.6" height="19.6" rx="1.6"/>
-      <rect x="-23.3" y="351.8" width="25.8" height="19.6" rx="1.6"/>
-      <rect x="-90.0" y="379.2" width="59.1" height="19.2" rx="1.6"/>
-      <rect x="-27.8" y="379.2" width="30.3" height="19.2" rx="1.6"/>
-      <rect x="-90.0" y="410.5" width="51.4" height="13.4" rx="1.6"/>
-      <rect x="-35.5" y="410.5" width="38.0" height="13.4" rx="1.6"/>
-      <rect x="-90.0" y="431.7" width="25.0" height="13.8" rx="1.6"/>
-      <rect x="-61.9" y="431.7" width="28.6" height="13.8" rx="1.6"/>
-      <rect x="-30.2" y="431.7" width="32.7" height="13.8" rx="1.6"/>
-      <rect x="-90.0" y="468.4" width="21.6" height="60.3" rx="1.6"/>
-      <rect x="-65.3" y="468.4" width="36.8" height="23.2" rx="1.6"/>
-      <rect x="-65.3" y="494.7" width="36.8" height="34.0" rx="1.6"/>
-      <rect x="-25.4" y="468.4" width="27.9" height="17.4" rx="1.6"/>
-      <rect x="-25.4" y="488.9" width="27.9" height="39.7" rx="1.6"/>
-      <rect x="-90.0" y="540.8" width="32.8" height="25.1" rx="1.6"/>
-      <rect x="-54.1" y="540.8" width="56.6" height="25.1" rx="1.6"/>
-      <rect x="-90.0" y="573.6" width="59.9" height="31.7" rx="1.6"/>
-      <rect x="-27.0" y="573.6" width="29.6" height="31.7" rx="1.6"/>
-      <rect x="-90.0" y="619.7" width="26.6" height="20.0" rx="1.6"/>
-      <rect x="-60.3" y="619.7" width="62.9" height="20.0" rx="1.6"/>
-      <rect x="-90.0" y="647.5" width="26.7" height="35.6" rx="1.6"/>
-      <rect x="-60.2" y="647.5" width="12.8" height="35.6" rx="1.6"/>
-      <rect x="-44.3" y="647.5" width="46.8" height="35.6" rx="1.6"/>
-      <rect x="-90.0" y="697.5" width="48.4" height="23.9" rx="1.6"/>
-      <rect x="-38.5" y="697.5" width="41.1" height="23.9" rx="1.6"/>
-      <rect x="-90.0" y="729.2" width="37.7" height="32.9" rx="1.6"/>
-      <rect x="-49.2" y="729.2" width="51.8" height="32.9" rx="1.6"/>
-      <rect x="-90.0" y="774.1" width="33.6" height="25.1" rx="1.6"/>
-      <rect x="-53.3" y="774.1" width="55.8" height="25.1" rx="1.6"/>
-      <rect x="-90.0" y="806.9" width="51.3" height="27.4" rx="1.6"/>
-      <rect x="-35.7" y="806.9" width="38.2" height="27.4" rx="1.6"/>
-      <rect x="-90.0" y="857.3" width="61.5" height="36.0" rx="1.6"/>
-      <rect x="-90.0" y="896.4" width="61.5" height="68.6" rx="1.6"/>
-      <rect x="-25.4" y="857.3" width="27.9" height="56.0" rx="1.6"/>
-      <rect x="-25.4" y="916.4" width="27.9" height="48.7" rx="1.6"/>
-      <rect x="16.9" y="-90.0" width="19.1" height="107.1" rx="1.6"/>
-      <rect x="16.9" y="20.2" width="19.1" height="114.2" rx="1.6"/>
-      <rect x="39.1" y="-90.0" width="36.9" height="147.3" rx="1.6"/>
-      <rect x="39.1" y="60.4" width="36.9" height="74.0" rx="1.6"/>
-      <rect x="16.9" y="157.3" width="35.8" height="31.1" rx="1.6"/>
-      <rect x="55.9" y="157.3" width="20.2" height="31.1" rx="1.6"/>
-      <rect x="16.9" y="200.5" width="17.7" height="31.1" rx="1.6"/>
-      <rect x="37.8" y="200.5" width="16.3" height="31.1" rx="1.6"/>
-      <rect x="57.2" y="200.5" width="18.8" height="31.1" rx="1.6"/>
-      <rect x="16.9" y="254.5" width="42.2" height="27.4" rx="1.6"/>
-      <rect x="62.2" y="254.5" width="13.8" height="27.4" rx="1.6"/>
-      <rect x="16.9" y="289.7" width="38.8" height="39.1" rx="1.6"/>
-      <rect x="58.8" y="289.7" width="17.2" height="39.1" rx="1.6"/>
-      <rect x="16.9" y="351.8" width="37.9" height="19.6" rx="1.6"/>
-      <rect x="57.9" y="351.8" width="18.1" height="19.6" rx="1.6"/>
-      <rect x="16.9" y="379.2" width="38.0" height="19.2" rx="1.6"/>
-      <rect x="58.1" y="379.2" width="18.0" height="19.2" rx="1.6"/>
-      <rect x="16.9" y="410.5" width="19.6" height="13.4" rx="1.6"/>
-      <rect x="39.7" y="410.5" width="7.8" height="13.4" rx="1.6"/>
-      <rect x="50.5" y="410.5" width="25.5" height="13.4" rx="1.6"/>
-      <rect x="16.9" y="431.7" width="23.6" height="13.8" rx="1.6"/>
-      <rect x="43.6" y="431.7" width="32.4" height="13.8" rx="1.6"/>
-      <rect x="16.9" y="468.4" width="21.8" height="34.8" rx="1.6"/>
-      <rect x="16.9" y="506.3" width="21.8" height="22.4" rx="1.6"/>
-      <rect x="41.9" y="468.4" width="11.6" height="60.3" rx="1.6"/>
-      <rect x="56.6" y="468.4" width="19.5" height="60.3" rx="1.6"/>
-      <rect x="16.9" y="540.8" width="13.3" height="25.1" rx="1.6"/>
-      <rect x="33.3" y="540.8" width="25.4" height="25.1" rx="1.6"/>
-      <rect x="61.9" y="540.8" width="14.2" height="25.1" rx="1.6"/>
-      <rect x="16.9" y="573.6" width="20.2" height="31.7" rx="1.6"/>
-      <rect x="40.2" y="573.6" width="14.8" height="31.7" rx="1.6"/>
-      <rect x="58.1" y="573.6" width="17.9" height="31.7" rx="1.6"/>
-      <rect x="16.9" y="619.7" width="20.6" height="20.0" rx="1.6"/>
-      <rect x="40.7" y="619.7" width="15.5" height="20.0" rx="1.6"/>
-      <rect x="59.2" y="619.7" width="16.8" height="20.0" rx="1.6"/>
-      <rect x="16.9" y="647.5" width="15.7" height="35.6" rx="1.6"/>
-      <rect x="35.8" y="647.5" width="40.3" height="35.6" rx="1.6"/>
-      <rect x="16.9" y="697.5" width="34.6" height="23.9" rx="1.6"/>
-      <rect x="54.7" y="697.5" width="21.4" height="23.9" rx="1.6"/>
-      <rect x="16.9" y="729.2" width="16.7" height="32.9" rx="1.6"/>
-      <rect x="36.7" y="729.2" width="13.4" height="32.9" rx="1.6"/>
-      <rect x="53.2" y="729.2" width="22.8" height="32.9" rx="1.6"/>
-      <rect x="16.9" y="774.1" width="37.3" height="25.1" rx="1.6"/>
-      <rect x="57.4" y="774.1" width="18.7" height="25.1" rx="1.6"/>
-      <rect x="16.9" y="806.9" width="39.6" height="27.4" rx="1.6"/>
-      <rect x="59.7" y="806.9" width="16.4" height="27.4" rx="1.6"/>
-      <rect x="16.9" y="857.3" width="25.7" height="53.2" rx="1.6"/>
-      <rect x="16.9" y="913.7" width="25.7" height="51.4" rx="1.6"/>
-      <rect x="45.7" y="857.3" width="30.3" height="73.4" rx="1.6"/>
-      <rect x="45.7" y="933.8" width="30.3" height="31.2" rx="1.6"/>
-      <rect x="99.0" y="-90.0" width="23.5" height="224.4" rx="1.6"/>
-      <rect x="99.0" y="157.3" width="23.5" height="31.1" rx="1.6"/>
-      <rect x="99.0" y="200.5" width="23.5" height="31.1" rx="1.6"/>
-      <rect x="99.0" y="254.5" width="23.5" height="27.4" rx="1.6"/>
-      <rect x="99.0" y="289.7" width="23.5" height="39.1" rx="1.6"/>
-      <rect x="99.0" y="351.8" width="23.5" height="19.6" rx="1.6"/>
-      <rect x="99.0" y="379.2" width="23.5" height="19.2" rx="1.6"/>
-      <rect x="99.0" y="410.5" width="23.5" height="13.4" rx="1.6"/>
-      <rect x="99.0" y="431.7" width="23.5" height="13.8" rx="1.6"/>
-      <rect x="99.0" y="468.4" width="23.5" height="60.3" rx="1.6"/>
-      <rect x="99.0" y="540.8" width="23.5" height="25.1" rx="1.6"/>
-      <rect x="99.0" y="573.6" width="23.5" height="31.7" rx="1.6"/>
-      <rect x="99.0" y="619.7" width="23.5" height="20.0" rx="1.6"/>
-      <rect x="99.0" y="647.5" width="23.5" height="35.6" rx="1.6"/>
-      <rect x="99.0" y="697.5" width="23.5" height="23.9" rx="1.6"/>
-      <rect x="99.0" y="729.2" width="23.5" height="32.9" rx="1.6"/>
-      <rect x="99.0" y="774.1" width="23.5" height="25.1" rx="1.6"/>
-      <rect x="99.0" y="806.9" width="23.5" height="27.4" rx="1.6"/>
-      <rect x="99.0" y="857.3" width="23.5" height="46.9" rx="1.6"/>
-      <rect x="99.0" y="907.3" width="23.5" height="57.7" rx="1.6"/>
-      <rect x="130.3" y="-90.0" width="27.8" height="224.4" rx="1.6"/>
-      <rect x="130.3" y="157.3" width="27.8" height="31.1" rx="1.6"/>
-      <rect x="130.3" y="200.5" width="27.8" height="31.1" rx="1.6"/>
-      <rect x="130.3" y="254.5" width="27.8" height="27.4" rx="1.6"/>
-      <rect x="130.3" y="289.7" width="27.8" height="39.1" rx="1.6"/>
-      <rect x="130.3" y="351.8" width="27.8" height="19.6" rx="1.6"/>
-      <rect x="130.3" y="379.2" width="27.8" height="19.2" rx="1.6"/>
-      <rect x="130.3" y="410.5" width="27.8" height="13.4" rx="1.6"/>
-      <rect x="130.3" y="431.7" width="27.8" height="13.8" rx="1.6"/>
-      <rect x="130.3" y="468.4" width="27.8" height="60.3" rx="1.6"/>
-      <rect x="130.3" y="540.8" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="130.3" y="573.6" width="27.8" height="31.7" rx="1.6"/>
-      <rect x="130.3" y="619.7" width="27.8" height="20.0" rx="1.6"/>
-      <rect x="130.3" y="647.5" width="27.8" height="35.6" rx="1.6"/>
-      <rect x="130.3" y="697.5" width="27.8" height="23.9" rx="1.6"/>
-      <rect x="130.3" y="729.2" width="27.8" height="32.9" rx="1.6"/>
-      <rect x="130.3" y="774.1" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="130.3" y="806.9" width="27.8" height="27.4" rx="1.6"/>
-      <rect x="130.3" y="857.3" width="27.8" height="56.5" rx="1.6"/>
-      <rect x="130.3" y="916.9" width="27.8" height="48.1" rx="1.6"/>
-      <rect x="172.5" y="-90.0" width="27.8" height="224.4" rx="1.6"/>
-      <rect x="172.5" y="157.3" width="27.8" height="31.1" rx="1.6"/>
-      <rect x="172.5" y="200.5" width="27.8" height="31.1" rx="1.6"/>
-      <rect x="172.5" y="254.5" width="27.8" height="27.4" rx="1.6"/>
-      <rect x="172.5" y="289.7" width="27.8" height="39.1" rx="1.6"/>
-      <rect x="172.5" y="351.8" width="27.8" height="19.6" rx="1.6"/>
-      <rect x="172.5" y="379.2" width="27.8" height="19.2" rx="1.6"/>
-      <rect x="172.5" y="410.5" width="27.8" height="13.4" rx="1.6"/>
-      <rect x="172.5" y="431.7" width="27.8" height="13.8" rx="1.6"/>
-      <rect x="172.5" y="468.4" width="27.8" height="60.3" rx="1.6"/>
-      <rect x="172.5" y="540.8" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="172.5" y="573.6" width="27.8" height="31.7" rx="1.6"/>
-      <rect x="172.5" y="619.7" width="27.8" height="20.0" rx="1.6"/>
-      <rect x="172.5" y="647.5" width="27.8" height="35.6" rx="1.6"/>
-      <rect x="172.5" y="697.5" width="27.8" height="23.9" rx="1.6"/>
-      <rect x="172.5" y="729.2" width="27.8" height="32.9" rx="1.6"/>
-      <rect x="172.5" y="774.1" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="172.5" y="806.9" width="27.8" height="27.4" rx="1.6"/>
-      <rect x="172.5" y="857.3" width="27.8" height="107.7" rx="1.6"/>
-      <rect x="208.1" y="-90.0" width="27.8" height="72.5" rx="1.6"/>
-      <rect x="208.1" y="-14.4" width="27.8" height="148.8" rx="1.6"/>
-      <rect x="208.1" y="157.3" width="27.8" height="31.1" rx="1.6"/>
-      <rect x="208.1" y="200.5" width="27.8" height="31.1" rx="1.6"/>
-      <rect x="208.1" y="254.5" width="27.8" height="27.4" rx="1.6"/>
-      <rect x="208.1" y="289.7" width="27.8" height="39.1" rx="1.6"/>
-      <rect x="208.1" y="351.8" width="27.8" height="19.6" rx="1.6"/>
-      <rect x="208.1" y="379.2" width="27.8" height="19.2" rx="1.6"/>
-      <rect x="208.1" y="410.5" width="27.8" height="13.4" rx="1.6"/>
-      <rect x="208.1" y="431.7" width="27.8" height="13.8" rx="1.6"/>
-      <rect x="208.1" y="468.4" width="27.8" height="40.3" rx="1.6"/>
-      <rect x="208.1" y="511.8" width="27.8" height="16.9" rx="1.6"/>
-      <rect x="208.1" y="540.8" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="208.1" y="573.6" width="27.8" height="31.7" rx="1.6"/>
-      <rect x="208.1" y="619.7" width="27.8" height="20.0" rx="1.6"/>
-      <rect x="208.1" y="647.5" width="27.8" height="35.6" rx="1.6"/>
-      <rect x="208.1" y="697.5" width="27.8" height="23.9" rx="1.6"/>
-      <rect x="208.1" y="729.2" width="27.8" height="32.9" rx="1.6"/>
-      <rect x="208.1" y="774.1" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="208.1" y="806.9" width="27.8" height="27.4" rx="1.6"/>
-      <rect x="208.1" y="857.3" width="27.8" height="107.7" rx="1.6"/>
-      <rect x="250.2" y="-90.0" width="27.8" height="151.2" rx="1.6"/>
-      <rect x="250.2" y="64.3" width="27.8" height="70.0" rx="1.6"/>
-      <rect x="250.2" y="157.3" width="27.8" height="31.1" rx="1.6"/>
-      <rect x="250.2" y="200.5" width="27.8" height="31.1" rx="1.6"/>
-      <rect x="250.2" y="254.5" width="27.8" height="27.4" rx="1.6"/>
-      <rect x="250.2" y="289.7" width="27.8" height="39.1" rx="1.6"/>
-      <rect x="250.2" y="351.8" width="27.8" height="19.6" rx="1.6"/>
-      <rect x="250.2" y="379.2" width="27.8" height="19.2" rx="1.6"/>
-      <rect x="250.2" y="410.5" width="27.8" height="13.4" rx="1.6"/>
-      <rect x="250.2" y="431.7" width="27.8" height="13.8" rx="1.6"/>
-      <rect x="250.2" y="468.4" width="27.8" height="18.6" rx="1.6"/>
-      <rect x="250.2" y="490.2" width="27.8" height="38.5" rx="1.6"/>
-      <rect x="250.2" y="540.8" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="250.2" y="573.6" width="27.8" height="31.7" rx="1.6"/>
-      <rect x="250.2" y="619.7" width="27.8" height="20.0" rx="1.6"/>
-      <rect x="250.2" y="647.5" width="27.8" height="35.6" rx="1.6"/>
-      <rect x="250.2" y="697.5" width="27.8" height="23.9" rx="1.6"/>
-      <rect x="250.2" y="729.2" width="27.8" height="32.9" rx="1.6"/>
-      <rect x="250.2" y="774.1" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="250.2" y="806.9" width="27.8" height="27.4" rx="1.6"/>
-      <rect x="250.2" y="857.3" width="27.8" height="107.7" rx="1.6"/>
-      <rect x="285.8" y="-90.0" width="27.8" height="153.4" rx="1.6"/>
-      <rect x="285.8" y="66.5" width="27.8" height="67.8" rx="1.6"/>
-      <rect x="285.8" y="157.3" width="27.8" height="31.1" rx="1.6"/>
-      <rect x="285.8" y="200.5" width="27.8" height="31.1" rx="1.6"/>
-      <rect x="285.8" y="254.5" width="27.8" height="27.4" rx="1.6"/>
-      <rect x="285.8" y="289.7" width="27.8" height="39.1" rx="1.6"/>
-      <rect x="285.8" y="351.8" width="27.8" height="19.6" rx="1.6"/>
-      <rect x="285.8" y="379.2" width="27.8" height="19.2" rx="1.6"/>
-      <rect x="285.8" y="410.5" width="27.8" height="13.4" rx="1.6"/>
-      <rect x="285.8" y="431.7" width="27.8" height="13.8" rx="1.6"/>
-      <rect x="285.8" y="468.4" width="27.8" height="29.1" rx="1.6"/>
-      <rect x="285.8" y="500.6" width="27.8" height="28.1" rx="1.6"/>
-      <rect x="285.8" y="540.8" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="285.8" y="573.6" width="27.8" height="31.7" rx="1.6"/>
-      <rect x="285.8" y="619.7" width="27.8" height="20.0" rx="1.6"/>
-      <rect x="285.8" y="647.5" width="27.8" height="35.6" rx="1.6"/>
-      <rect x="285.8" y="697.5" width="27.8" height="23.9" rx="1.6"/>
-      <rect x="285.8" y="729.2" width="27.8" height="32.9" rx="1.6"/>
-      <rect x="285.8" y="774.1" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="285.8" y="806.9" width="27.8" height="27.4" rx="1.6"/>
-      <rect x="285.8" y="857.3" width="27.8" height="107.7" rx="1.6"/>
-      <rect x="328.0" y="-90.0" width="27.8" height="105.0" rx="1.6"/>
-      <rect x="328.0" y="18.1" width="27.8" height="116.2" rx="1.6"/>
-      <rect x="328.0" y="157.3" width="27.8" height="31.1" rx="1.6"/>
-      <rect x="328.0" y="200.5" width="27.8" height="31.1" rx="1.6"/>
-      <rect x="328.0" y="254.5" width="27.8" height="27.4" rx="1.6"/>
-      <rect x="328.0" y="289.7" width="27.8" height="39.1" rx="1.6"/>
-      <rect x="328.0" y="351.8" width="27.8" height="19.6" rx="1.6"/>
-      <rect x="328.0" y="379.2" width="27.8" height="19.2" rx="1.6"/>
-      <rect x="328.0" y="410.5" width="27.8" height="13.4" rx="1.6"/>
-      <rect x="328.0" y="431.7" width="27.8" height="13.8" rx="1.6"/>
-      <rect x="328.0" y="468.4" width="27.8" height="60.3" rx="1.6"/>
-      <rect x="328.0" y="540.8" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="328.0" y="573.6" width="27.8" height="31.7" rx="1.6"/>
-      <rect x="328.0" y="619.7" width="27.8" height="20.0" rx="1.6"/>
-      <rect x="328.0" y="647.5" width="27.8" height="35.6" rx="1.6"/>
-      <rect x="328.0" y="697.5" width="27.8" height="23.9" rx="1.6"/>
-      <rect x="328.0" y="729.2" width="27.8" height="32.9" rx="1.6"/>
-      <rect x="328.0" y="774.1" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="328.0" y="806.9" width="27.8" height="27.4" rx="1.6"/>
-      <rect x="328.0" y="857.3" width="27.8" height="60.6" rx="1.6"/>
-      <rect x="328.0" y="921.0" width="27.8" height="44.0" rx="1.6"/>
-      <rect x="363.6" y="-90.0" width="27.8" height="224.4" rx="1.6"/>
-      <rect x="363.6" y="157.3" width="27.8" height="31.1" rx="1.6"/>
-      <rect x="363.6" y="200.5" width="27.8" height="31.1" rx="1.6"/>
-      <rect x="363.6" y="254.5" width="27.8" height="27.4" rx="1.6"/>
-      <rect x="363.6" y="289.7" width="27.8" height="39.1" rx="1.6"/>
-      <rect x="363.6" y="351.8" width="27.8" height="19.6" rx="1.6"/>
-      <rect x="363.6" y="379.2" width="27.8" height="19.2" rx="1.6"/>
-      <rect x="363.6" y="410.5" width="27.8" height="13.4" rx="1.6"/>
-      <rect x="363.6" y="431.7" width="27.8" height="13.8" rx="1.6"/>
-      <rect x="363.6" y="468.4" width="27.8" height="26.3" rx="1.6"/>
-      <rect x="363.6" y="497.8" width="27.8" height="30.9" rx="1.6"/>
-      <rect x="363.6" y="540.8" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="363.6" y="573.6" width="27.8" height="31.7" rx="1.6"/>
-      <rect x="363.6" y="619.7" width="27.8" height="20.0" rx="1.6"/>
-      <rect x="363.6" y="647.5" width="27.8" height="35.6" rx="1.6"/>
-      <rect x="363.6" y="697.5" width="27.8" height="23.9" rx="1.6"/>
-      <rect x="363.6" y="729.2" width="27.8" height="32.9" rx="1.6"/>
-      <rect x="363.6" y="774.1" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="363.6" y="806.9" width="27.8" height="27.4" rx="1.6"/>
-      <rect x="363.6" y="857.3" width="27.8" height="107.7" rx="1.6"/>
-      <rect x="405.8" y="-90.0" width="33.5" height="137.1" rx="1.6"/>
-      <rect x="405.8" y="50.2" width="33.5" height="84.1" rx="1.6"/>
-      <rect x="442.4" y="-90.0" width="26.8" height="224.4" rx="1.6"/>
-      <rect x="405.8" y="157.3" width="40.4" height="31.1" rx="1.6"/>
-      <rect x="449.7" y="157.3" width="19.5" height="31.1" rx="1.6"/>
-      <rect x="405.8" y="200.5" width="25.0" height="31.1" rx="1.6"/>
-      <rect x="434.0" y="200.5" width="35.2" height="31.1" rx="1.6"/>
-      <rect x="405.8" y="254.5" width="15.6" height="27.4" rx="1.6"/>
-      <rect x="424.5" y="254.5" width="6.8" height="27.4" rx="1.6"/>
-      <rect x="434.4" y="254.5" width="34.8" height="27.4" rx="1.6"/>
-      <rect x="405.8" y="289.7" width="40.5" height="39.1" rx="1.6"/>
-      <rect x="449.4" y="289.7" width="19.7" height="39.1" rx="1.6"/>
-      <rect x="405.8" y="351.8" width="30.9" height="19.6" rx="1.6"/>
-      <rect x="439.8" y="351.8" width="29.4" height="19.6" rx="1.6"/>
-      <rect x="405.8" y="379.2" width="15.8" height="19.2" rx="1.6"/>
-      <rect x="424.7" y="379.2" width="44.5" height="19.2" rx="1.6"/>
-      <rect x="405.8" y="410.5" width="45.0" height="13.4" rx="1.6"/>
-      <rect x="453.9" y="410.5" width="15.3" height="13.4" rx="1.6"/>
-      <rect x="405.8" y="431.7" width="16.2" height="13.8" rx="1.6"/>
-      <rect x="426.2" y="431.7" width="43.0" height="13.8" rx="1.6"/>
-      <rect x="405.8" y="468.4" width="23.8" height="18.1" rx="1.6"/>
-      <rect x="405.8" y="489.6" width="23.8" height="39.1" rx="1.6"/>
-      <rect x="434.2" y="468.4" width="35.0" height="26.7" rx="1.6"/>
-      <rect x="434.2" y="498.2" width="35.0" height="30.5" rx="1.6"/>
-      <rect x="405.8" y="540.8" width="29.0" height="25.1" rx="1.6"/>
-      <rect x="437.9" y="540.8" width="31.3" height="25.1" rx="1.6"/>
-      <rect x="405.8" y="573.6" width="28.4" height="31.7" rx="1.6"/>
-      <rect x="437.3" y="573.6" width="8.8" height="31.7" rx="1.6"/>
-      <rect x="449.2" y="573.6" width="20.0" height="31.7" rx="1.6"/>
-      <rect x="405.8" y="619.7" width="41.6" height="20.0" rx="1.6"/>
-      <rect x="450.5" y="619.7" width="18.7" height="20.0" rx="1.6"/>
-      <rect x="405.8" y="647.5" width="22.6" height="35.6" rx="1.6"/>
-      <rect x="431.5" y="647.5" width="37.7" height="35.6" rx="1.6"/>
-      <rect x="405.8" y="697.5" width="38.4" height="23.9" rx="1.6"/>
-      <rect x="447.3" y="697.5" width="21.9" height="23.9" rx="1.6"/>
-      <rect x="405.8" y="729.2" width="41.7" height="32.9" rx="1.6"/>
-      <rect x="454.9" y="729.2" width="14.3" height="32.9" rx="1.6"/>
-      <rect x="405.8" y="774.1" width="34.5" height="25.1" rx="1.6"/>
-      <rect x="443.4" y="774.1" width="6.8" height="25.1" rx="1.6"/>
-      <rect x="453.3" y="774.1" width="15.9" height="25.1" rx="1.6"/>
-      <rect x="405.8" y="806.9" width="35.7" height="27.4" rx="1.6"/>
-      <rect x="444.6" y="806.9" width="24.6" height="27.4" rx="1.6"/>
-      <rect x="405.8" y="857.3" width="36.9" height="72.1" rx="1.6"/>
-      <rect x="405.8" y="932.5" width="36.9" height="32.6" rx="1.6"/>
-      <rect x="445.9" y="857.3" width="23.3" height="107.7" rx="1.6"/>
-      <rect x="483.6" y="-90.0" width="14.4" height="224.4" rx="1.6"/>
-      <rect x="501.1" y="-90.0" width="20.5" height="87.4" rx="1.6"/>
-      <rect x="501.1" y="0.5" width="20.5" height="133.8" rx="1.6"/>
-      <rect x="524.6" y="-90.0" width="22.3" height="224.4" rx="1.6"/>
-      <rect x="483.6" y="157.3" width="35.1" height="31.1" rx="1.6"/>
-      <rect x="521.8" y="157.3" width="25.2" height="31.1" rx="1.6"/>
-      <rect x="483.6" y="200.5" width="39.5" height="31.1" rx="1.6"/>
-      <rect x="526.9" y="200.5" width="20.1" height="31.1" rx="1.6"/>
-      <rect x="483.6" y="254.5" width="40.6" height="27.4" rx="1.6"/>
-      <rect x="529.0" y="254.5" width="17.9" height="27.4" rx="1.6"/>
-      <rect x="483.6" y="289.7" width="26.8" height="39.1" rx="1.6"/>
-      <rect x="513.5" y="289.7" width="33.4" height="39.1" rx="1.6"/>
-      <rect x="483.6" y="351.8" width="23.1" height="19.6" rx="1.6"/>
-      <rect x="509.8" y="351.8" width="6.2" height="19.6" rx="1.6"/>
-      <rect x="519.1" y="351.8" width="27.9" height="19.6" rx="1.6"/>
-      <rect x="483.6" y="379.2" width="31.8" height="19.2" rx="1.6"/>
-      <rect x="518.5" y="379.2" width="28.5" height="19.2" rx="1.6"/>
-      <rect x="483.6" y="410.5" width="39.3" height="13.4" rx="1.6"/>
-      <rect x="525.9" y="410.5" width="21.0" height="13.4" rx="1.6"/>
-      <rect x="483.6" y="431.7" width="40.7" height="13.8" rx="1.6"/>
-      <rect x="527.4" y="431.7" width="19.6" height="13.8" rx="1.6"/>
-      <rect x="483.6" y="468.4" width="41.5" height="60.3" rx="1.6"/>
-      <rect x="532.3" y="468.4" width="14.7" height="36.7" rx="1.6"/>
-      <rect x="532.3" y="508.2" width="14.7" height="20.5" rx="1.6"/>
-      <rect x="483.6" y="540.8" width="17.3" height="25.1" rx="1.6"/>
-      <rect x="504.0" y="540.8" width="7.3" height="25.1" rx="1.6"/>
-      <rect x="514.4" y="540.8" width="32.6" height="25.1" rx="1.6"/>
-      <rect x="483.6" y="573.6" width="26.2" height="31.7" rx="1.6"/>
-      <rect x="520.8" y="573.6" width="26.2" height="31.7" rx="1.6"/>
-      <rect x="483.6" y="619.7" width="14.7" height="20.0" rx="1.6"/>
-      <rect x="501.4" y="619.7" width="45.5" height="20.0" rx="1.6"/>
-      <rect x="483.6" y="647.5" width="19.3" height="35.6" rx="1.6"/>
-      <rect x="506.0" y="647.5" width="40.9" height="35.6" rx="1.6"/>
-      <rect x="483.6" y="697.5" width="35.8" height="23.9" rx="1.6"/>
-      <rect x="522.5" y="697.5" width="24.5" height="23.9" rx="1.6"/>
-      <rect x="483.6" y="729.2" width="19.2" height="32.9" rx="1.6"/>
-      <rect x="505.9" y="729.2" width="16.5" height="32.9" rx="1.6"/>
-      <rect x="525.5" y="729.2" width="21.5" height="32.9" rx="1.6"/>
-      <rect x="483.6" y="774.1" width="44.5" height="25.1" rx="1.6"/>
-      <rect x="531.2" y="774.1" width="15.8" height="25.1" rx="1.6"/>
-      <rect x="483.6" y="806.9" width="20.4" height="27.4" rx="1.6"/>
-      <rect x="507.1" y="806.9" width="12.0" height="27.4" rx="1.6"/>
-      <rect x="522.2" y="806.9" width="24.8" height="27.4" rx="1.6"/>
-      <rect x="483.6" y="857.3" width="44.4" height="32.6" rx="1.6"/>
-      <rect x="483.6" y="893.0" width="44.4" height="72.0" rx="1.6"/>
-      <rect x="531.1" y="857.3" width="15.9" height="53.3" rx="1.6"/>
-      <rect x="531.1" y="913.8" width="15.9" height="51.3" rx="1.6"/>
-      <rect x="561.4" y="-90.0" width="19.6" height="90.0" rx="1.6"/>
-      <rect x="561.4" y="3.1" width="19.6" height="131.3" rx="1.6"/>
-      <rect x="584.1" y="-90.0" width="40.6" height="224.4" rx="1.6"/>
-      <rect x="561.4" y="157.3" width="45.5" height="31.1" rx="1.6"/>
-      <rect x="609.9" y="157.3" width="14.8" height="31.1" rx="1.6"/>
-      <rect x="561.4" y="200.5" width="23.0" height="31.1" rx="1.6"/>
-      <rect x="589.1" y="200.5" width="35.6" height="31.1" rx="1.6"/>
-      <rect x="561.4" y="254.5" width="29.1" height="27.4" rx="1.6"/>
-      <rect x="593.5" y="254.5" width="31.2" height="27.4" rx="1.6"/>
-      <rect x="561.4" y="289.7" width="14.8" height="39.1" rx="1.6"/>
-      <rect x="579.2" y="289.7" width="18.4" height="39.1" rx="1.6"/>
-      <rect x="600.8" y="289.7" width="24.0" height="39.1" rx="1.6"/>
-      <rect x="561.4" y="351.8" width="23.8" height="19.6" rx="1.6"/>
-      <rect x="588.2" y="351.8" width="12.2" height="19.6" rx="1.6"/>
-      <rect x="603.5" y="351.8" width="21.2" height="19.6" rx="1.6"/>
-      <rect x="561.4" y="379.2" width="16.4" height="19.2" rx="1.6"/>
-      <rect x="580.9" y="379.2" width="43.9" height="19.2" rx="1.6"/>
-      <rect x="561.4" y="410.5" width="16.3" height="13.4" rx="1.6"/>
-      <rect x="580.8" y="410.5" width="10.2" height="13.4" rx="1.6"/>
-      <rect x="594.0" y="410.5" width="30.7" height="13.4" rx="1.6"/>
-      <rect x="561.4" y="431.7" width="34.6" height="13.8" rx="1.6"/>
-      <rect x="599.1" y="431.7" width="25.6" height="13.8" rx="1.6"/>
-      <rect x="561.4" y="468.4" width="43.8" height="60.3" rx="1.6"/>
-      <rect x="608.2" y="468.4" width="16.5" height="60.3" rx="1.6"/>
-      <rect x="561.4" y="540.8" width="26.4" height="25.1" rx="1.6"/>
-      <rect x="590.8" y="540.8" width="33.9" height="25.1" rx="1.6"/>
-      <rect x="561.4" y="573.6" width="22.9" height="31.7" rx="1.6"/>
-      <rect x="590.3" y="573.6" width="34.5" height="31.7" rx="1.6"/>
-      <rect x="561.4" y="619.7" width="24.1" height="20.0" rx="1.6"/>
-      <rect x="596.4" y="619.7" width="28.3" height="20.0" rx="1.6"/>
-      <rect x="561.4" y="647.5" width="40.3" height="35.6" rx="1.6"/>
-      <rect x="604.8" y="647.5" width="20.0" height="35.6" rx="1.6"/>
-      <rect x="561.4" y="697.5" width="31.3" height="23.9" rx="1.6"/>
-      <rect x="595.8" y="697.5" width="29.0" height="23.9" rx="1.6"/>
-      <rect x="561.4" y="729.2" width="19.0" height="32.9" rx="1.6"/>
-      <rect x="584.3" y="729.2" width="40.4" height="32.9" rx="1.6"/>
-      <rect x="561.4" y="774.1" width="28.3" height="25.1" rx="1.6"/>
-      <rect x="597.3" y="774.1" width="27.4" height="25.1" rx="1.6"/>
-      <rect x="561.4" y="806.9" width="39.6" height="27.4" rx="1.6"/>
-      <rect x="605.9" y="806.9" width="18.9" height="27.4" rx="1.6"/>
-      <rect x="561.4" y="857.3" width="20.9" height="51.6" rx="1.6"/>
-      <rect x="561.4" y="912.0" width="20.9" height="53.0" rx="1.6"/>
-      <rect x="585.4" y="857.3" width="15.1" height="46.8" rx="1.6"/>
-      <rect x="585.4" y="907.2" width="15.1" height="57.8" rx="1.6"/>
-      <rect x="603.6" y="857.3" width="21.2" height="62.5" rx="1.6"/>
-      <rect x="603.6" y="922.9" width="21.2" height="42.1" rx="1.6"/>
-      <rect x="639.1" y="-90.0" width="21.2" height="224.4" rx="1.6"/>
-      <rect x="663.4" y="-90.0" width="9.5" height="224.4" rx="1.6"/>
-      <rect x="676.1" y="-90.0" width="26.5" height="224.4" rx="1.6"/>
-      <rect x="639.1" y="157.3" width="31.4" height="31.1" rx="1.6"/>
-      <rect x="673.6" y="157.3" width="28.9" height="31.1" rx="1.6"/>
-      <rect x="639.1" y="200.5" width="28.9" height="31.1" rx="1.6"/>
-      <rect x="679.2" y="200.5" width="23.3" height="31.1" rx="1.6"/>
-      <rect x="639.1" y="254.5" width="25.6" height="27.4" rx="1.6"/>
-      <rect x="667.8" y="254.5" width="34.7" height="27.4" rx="1.6"/>
-      <rect x="639.1" y="289.7" width="24.9" height="39.1" rx="1.6"/>
-      <rect x="667.1" y="289.7" width="12.3" height="39.1" rx="1.6"/>
-      <rect x="682.5" y="289.7" width="20.0" height="39.1" rx="1.6"/>
-      <rect x="639.1" y="351.8" width="37.6" height="19.6" rx="1.6"/>
-      <rect x="679.8" y="351.8" width="22.7" height="19.6" rx="1.6"/>
-      <rect x="639.1" y="379.2" width="29.2" height="19.2" rx="1.6"/>
-      <rect x="671.5" y="379.2" width="7.1" height="19.2" rx="1.6"/>
-      <rect x="681.7" y="379.2" width="20.8" height="19.2" rx="1.6"/>
-      <rect x="639.1" y="410.5" width="15.2" height="13.4" rx="1.6"/>
-      <rect x="662.3" y="410.5" width="40.2" height="13.4" rx="1.6"/>
-      <rect x="639.1" y="431.7" width="28.3" height="13.8" rx="1.6"/>
-      <rect x="670.6" y="431.7" width="32.0" height="13.8" rx="1.6"/>
-      <rect x="639.1" y="468.4" width="35.9" height="24.1" rx="1.6"/>
-      <rect x="639.1" y="495.7" width="35.9" height="33.0" rx="1.6"/>
-      <rect x="678.1" y="468.4" width="6.2" height="26.6" rx="1.6"/>
-      <rect x="678.1" y="498.2" width="6.2" height="30.5" rx="1.6"/>
-      <rect x="687.5" y="468.4" width="15.0" height="36.1" rx="1.6"/>
-      <rect x="687.5" y="507.6" width="15.0" height="21.1" rx="1.6"/>
-      <rect x="639.1" y="540.8" width="16.8" height="25.1" rx="1.6"/>
-      <rect x="659.0" y="540.8" width="10.0" height="25.1" rx="1.6"/>
-      <rect x="672.2" y="540.8" width="30.4" height="25.1" rx="1.6"/>
-      <rect x="639.1" y="573.6" width="27.2" height="31.7" rx="1.6"/>
-      <rect x="669.5" y="573.6" width="8.4" height="31.7" rx="1.6"/>
-      <rect x="681.0" y="573.6" width="21.5" height="31.7" rx="1.6"/>
-      <rect x="639.1" y="619.7" width="41.9" height="20.0" rx="1.6"/>
-      <rect x="684.2" y="619.7" width="18.4" height="20.0" rx="1.6"/>
-      <rect x="639.1" y="647.5" width="28.8" height="35.6" rx="1.6"/>
-      <rect x="671.1" y="647.5" width="31.5" height="35.6" rx="1.6"/>
-      <rect x="639.1" y="697.5" width="31.7" height="23.9" rx="1.6"/>
-      <rect x="674.0" y="697.5" width="28.6" height="23.9" rx="1.6"/>
-      <rect x="639.1" y="729.2" width="19.0" height="32.9" rx="1.6"/>
-      <rect x="661.3" y="729.2" width="41.3" height="32.9" rx="1.6"/>
-      <rect x="639.1" y="774.1" width="34.2" height="25.1" rx="1.6"/>
-      <rect x="676.5" y="774.1" width="26.0" height="25.1" rx="1.6"/>
-      <rect x="639.1" y="806.9" width="18.4" height="27.4" rx="1.6"/>
-      <rect x="660.7" y="806.9" width="13.2" height="27.4" rx="1.6"/>
-      <rect x="677.0" y="806.9" width="25.5" height="27.4" rx="1.6"/>
-      <rect x="639.1" y="857.3" width="16.3" height="69.7" rx="1.6"/>
-      <rect x="639.1" y="930.1" width="16.3" height="34.9" rx="1.6"/>
-      <rect x="658.6" y="857.3" width="25.5" height="107.7" rx="1.6"/>
-      <rect x="687.2" y="857.3" width="15.4" height="69.0" rx="1.6"/>
-      <rect x="687.2" y="929.4" width="15.4" height="35.6" rx="1.6"/>
-      <rect x="716.9" y="-90.0" width="34.3" height="224.4" rx="1.6"/>
-      <rect x="754.3" y="-90.0" width="35.7" height="105.8" rx="1.6"/>
-      <rect x="754.3" y="18.9" width="35.7" height="115.5" rx="1.6"/>
-      <rect x="716.9" y="157.3" width="36.7" height="31.1" rx="1.6"/>
-      <rect x="756.7" y="157.3" width="33.3" height="31.1" rx="1.6"/>
-      <rect x="716.9" y="200.5" width="34.7" height="31.1" rx="1.6"/>
-      <rect x="754.7" y="200.5" width="35.3" height="31.1" rx="1.6"/>
-      <rect x="716.9" y="254.5" width="19.8" height="27.4" rx="1.6"/>
-      <rect x="739.9" y="254.5" width="50.2" height="27.4" rx="1.6"/>
-      <rect x="716.9" y="289.7" width="42.8" height="39.1" rx="1.6"/>
-      <rect x="762.8" y="289.7" width="27.2" height="39.1" rx="1.6"/>
-      <rect x="716.9" y="351.8" width="31.6" height="19.6" rx="1.6"/>
-      <rect x="751.7" y="351.8" width="5.4" height="19.6" rx="1.6"/>
-      <rect x="760.2" y="351.8" width="29.8" height="19.6" rx="1.6"/>
-      <rect x="716.9" y="379.2" width="51.1" height="19.2" rx="1.6"/>
-      <rect x="771.5" y="379.2" width="18.6" height="19.2" rx="1.6"/>
-      <rect x="716.9" y="410.5" width="20.1" height="13.4" rx="1.6"/>
-      <rect x="740.2" y="410.5" width="12.5" height="13.4" rx="1.6"/>
-      <rect x="755.8" y="410.5" width="34.3" height="13.4" rx="1.6"/>
-      <rect x="716.9" y="431.7" width="16.9" height="13.8" rx="1.6"/>
-      <rect x="736.9" y="431.7" width="53.1" height="13.8" rx="1.6"/>
-      <rect x="716.9" y="468.4" width="33.7" height="30.3" rx="1.6"/>
-      <rect x="716.9" y="501.8" width="33.7" height="26.8" rx="1.6"/>
-      <rect x="758.2" y="468.4" width="31.8" height="60.3" rx="1.6"/>
-      <rect x="716.9" y="540.8" width="24.8" height="25.1" rx="1.6"/>
-      <rect x="744.8" y="540.8" width="23.8" height="25.1" rx="1.6"/>
-      <rect x="771.8" y="540.8" width="18.2" height="25.1" rx="1.6"/>
-      <rect x="716.9" y="573.6" width="48.2" height="31.7" rx="1.6"/>
-      <rect x="768.2" y="573.6" width="21.8" height="31.7" rx="1.6"/>
-      <rect x="716.9" y="619.7" width="44.8" height="20.0" rx="1.6"/>
-      <rect x="764.8" y="619.7" width="25.2" height="20.0" rx="1.6"/>
-      <rect x="716.9" y="647.5" width="22.6" height="35.6" rx="1.6"/>
-      <rect x="742.7" y="647.5" width="47.4" height="35.6" rx="1.6"/>
-      <rect x="716.9" y="697.5" width="51.7" height="23.9" rx="1.6"/>
-      <rect x="771.7" y="697.5" width="18.3" height="23.9" rx="1.6"/>
-      <rect x="716.9" y="729.2" width="43.4" height="32.9" rx="1.6"/>
-      <rect x="771.2" y="729.2" width="18.8" height="32.9" rx="1.6"/>
-      <rect x="716.9" y="774.1" width="27.8" height="25.1" rx="1.6"/>
-      <rect x="752.8" y="774.1" width="37.2" height="25.1" rx="1.6"/>
-      <rect x="716.9" y="806.9" width="26.9" height="27.4" rx="1.6"/>
-      <rect x="746.9" y="806.9" width="43.1" height="27.4" rx="1.6"/>
-      <rect x="716.9" y="857.3" width="20.3" height="57.3" rx="1.6"/>
-      <rect x="716.9" y="917.7" width="20.3" height="47.3" rx="1.6"/>
-      <rect x="740.3" y="857.3" width="13.1" height="107.7" rx="1.6"/>
-      <rect x="756.5" y="857.3" width="33.5" height="107.7" rx="1.6"/>
-      </g>
-      <g stroke="#525B6C" stroke-width="1.2">
-      <rect x="48.6" y="204.2" width="77.8" height="77.8" rx="2" fill="#4A5262"/>
-      <rect x="165.3" y="122.5" width="155.6" height="71.9" rx="2" fill="#454D5D"/>
-      <rect x="281.9" y="194.4" width="116.7" height="48.6" rx="2" fill="#454D5D"/>
-      <rect x="56.4" y="569.7" width="42.8" height="46.7" rx="2" fill="#454D5D"/>
-      </g>
-      <path d="M126.4 0V875 M204.2 0V875 M281.9 0V875 M359.7 0V875 M0 285.8H700 M0 375.3H700 M0 427.8H700 M0 569.7H700 M0 643.6H700 M0 725.3H700 M0 803.1H700" stroke="#2C3340" stroke-width="8.2" fill="none" stroke-linecap="round"/>
-      <path d="M0 194.4H700 M0 404.4H700 M0 534.7H700 M0 768.1H700" stroke="#2C3340" stroke-width="12.4" fill="none" stroke-linecap="round"/>
-      <path d="M9.7 0V875 M165.3 0V875 M243.1 0V875 M320.8 0V875 M398.6 0V875 M476.4 0V875 M554.2 0V875 M631.9 0V875 M709.7 0V875 M0 612.5H700 M0 690.3H700" stroke="#2C3340" stroke-width="14.8" fill="none" stroke-linecap="round"/>
-      <path d="M87.5 0V875 M0 145.8H700 M0 243.1H700 M0 340.3H700 M0 456.9H700 M0 845.8H700" stroke="#2C3340" stroke-width="23.3" fill="none" stroke-linecap="round"/>
-      <path d="M126.4 0V875 M204.2 0V875 M281.9 0V875 M359.7 0V875 M0 285.8H700 M0 375.3H700 M0 427.8H700 M0 569.7H700 M0 643.6H700 M0 725.3H700 M0 803.1H700" stroke="#5A6373" stroke-width="4.3" fill="none" stroke-linecap="round"/>
-      <path d="M0 194.4H700 M0 404.4H700 M0 534.7H700 M0 768.1H700" stroke="#666F80" stroke-width="8.6" fill="none" stroke-linecap="round"/>
-      <path d="M9.7 0V875 M165.3 0V875 M243.1 0V875 M320.8 0V875 M398.6 0V875 M476.4 0V875 M554.2 0V875 M631.9 0V875 M709.7 0V875 M0 612.5H700 M0 690.3H700" stroke="#6E7889" stroke-width="10.9" fill="none" stroke-linecap="round"/>
-      <path d="M87.5 0V875 M0 145.8H700 M0 243.1H700 M0 340.3H700 M0 456.9H700 M0 845.8H700" stroke="#79839A" stroke-width="19.4" fill="none" stroke-linecap="round"/>
-      <text class="st" x="68.1" y="141.8">Arch St</text>
-      <text class="st" x="602.8" y="141.8">Arch St</text>
-      <text class="st" x="68.1" y="190.4">Filbert St</text>
-      <text class="st" x="602.8" y="190.4">Filbert St</text>
-      <text class="st" x="68.1" y="239.1">Market St</text>
-      <text class="st" x="602.8" y="239.1">Market St</text>
-      <text class="st" x="68.1" y="336.3">Chestnut St</text>
-      <text class="st" x="602.8" y="336.3">Chestnut St</text>
-      <text class="st" x="68.1" y="400.4">Sansom St</text>
-      <text class="st" x="602.8" y="400.4">Sansom St</text>
-      <text class="st" x="68.1" y="452.9">Walnut St</text>
-      <text class="st" x="602.8" y="452.9">Walnut St</text>
-      <text class="st" x="68.1" y="530.7">Locust St</text>
-      <text class="st" x="602.8" y="530.7">Locust St</text>
-      <text class="st" x="68.1" y="608.5">Spruce St</text>
-      <text class="st" x="602.8" y="608.5">Spruce St</text>
-      <text class="st" x="68.1" y="686.3">Pine St</text>
-      <text class="st" x="602.8" y="686.3">Pine St</text>
-      <text class="st" x="68.1" y="764.1">Lombard St</text>
-      <text class="st" x="602.8" y="764.1">Lombard St</text>
-      <text class="st" x="68.1" y="841.8">South St</text>
-      <text class="st" x="602.8" y="841.8">South St</text>
-      <text class="st" x="5.7" y="184.7" transform="rotate(-90 5.7 184.7)">15th St</text>
-      <text class="st" x="5.7" y="806.9" transform="rotate(-90 5.7 806.9)">15th St</text>
-      <text class="st" x="83.5" y="184.7" transform="rotate(-90 83.5 184.7)">S Broad St</text>
-      <text class="st" x="83.5" y="806.9" transform="rotate(-90 83.5 806.9)">S Broad St</text>
-      <text class="st" x="161.3" y="184.7" transform="rotate(-90 161.3 184.7)">13th St</text>
-      <text class="st" x="161.3" y="806.9" transform="rotate(-90 161.3 806.9)">13th St</text>
-      <text class="st" x="239.1" y="184.7" transform="rotate(-90 239.1 184.7)">12th St</text>
-      <text class="st" x="239.1" y="806.9" transform="rotate(-90 239.1 806.9)">12th St</text>
-      <text class="st" x="316.8" y="184.7" transform="rotate(-90 316.8 184.7)">11th St</text>
-      <text class="st" x="316.8" y="806.9" transform="rotate(-90 316.8 806.9)">11th St</text>
-      <text class="st" x="394.6" y="184.7" transform="rotate(-90 394.6 184.7)">10th St</text>
-      <text class="st" x="394.6" y="806.9" transform="rotate(-90 394.6 806.9)">10th St</text>
-      <text class="st" x="472.4" y="184.7" transform="rotate(-90 472.4 184.7)">9th St</text>
-      <text class="st" x="472.4" y="806.9" transform="rotate(-90 472.4 806.9)">9th St</text>
-      <text class="st" x="550.2" y="184.7" transform="rotate(-90 550.2 184.7)">8th St</text>
-      <text class="st" x="550.2" y="806.9" transform="rotate(-90 550.2 806.9)">8th St</text>
-      <text class="st" x="627.9" y="184.7" transform="rotate(-90 627.9 184.7)">7th St</text>
-      <text class="st" x="627.9" y="806.9" transform="rotate(-90 627.9 806.9)">7th St</text>
-      <text class="st" x="705.7" y="184.7" transform="rotate(-90 705.7 184.7)">6th St</text>
-      <text class="st" x="705.7" y="806.9" transform="rotate(-90 705.7 806.9)">6th St</text>
-      <path class="rtc" id="routec" d=""/>
-      <path class="rt" id="route" d=""/>
-      <circle class="halo" cx="320.8" cy="456.9" r="22"/>
-      <circle class="me" cx="320.8" cy="456.9" r="8"/>
-      <text class="melbl" x="320.8" y="482" text-anchor="middle">You are here</text>
-      <g id="pois"></g>
-      <path class="rtc" id="qroutec" d=""/>
-      <path class="rt" id="qroute" d="" style="stroke:#F2B233"/>
-      <g id="qpins"></g>
-    </svg>
-
-    <div class="card" id="card">
-      <h2 id="cTitle">To City Hall</h2>
-      <div class="opt"><div class="a" id="cWalkA"></div><div class="b" id="cWalkB"></div></div>
-      <div class="hr" id="cSep"></div>
-      <div class="opt" id="cBus"><div class="a" id="cBusA"></div><div class="b" id="cBusB"></div></div>
-      <div class="bar"><i id="cBar"></i></div>
-    </div>
-
-    <div class="card q" id="qcard" aria-live="polite">
-      <div class="kick"><span id="qKick">Side quest &middot; 21 in 12 min</span><span class="ai" id="qAi">AI</span></div>
-      <div class="note wait" id="qNote"></div>
-      <div class="qlist" id="qList"></div>
-      <div class="qd" id="qDetail" hidden></div>
-      <div class="src" id="qSrc"></div>
-      <div class="bar"><i id="qBar"></i></div>
-    </div>
+    <div id="map" aria-label="Map centred on 11th &amp; Walnut St"></div>
+    <div class="card" id="card" aria-live="polite"></div>
   </div>
 
   <div class="foot">
-    <span id="hint">Tap your bus for a side quest &middot; or tap a place</span>
+    <span id="hint">Tap a button, your bus, or a place</span>
     <span>Prototype &middot; UPenn course &middot; not affiliated with SEPTA</span>
   </div>
 </div>
@@ -807,334 +194,283 @@
 <script>
 (function(){
   "use strict";
-  var RESULT_MS=15000, ARRIVE_MS=6000;
-  var PLACES=[{"id": "midtown", "nm": "Midtown Village", "walk": 4, "cat": "food", "bx": 183, "note": "west on Walnut, north on 13th", "bus": null, "px": 165.3, "py": 404.4, "by": 375.4, "d": "M320.8 456.9 L165.3 456.9 L165.3 404.4"}, {"id": "jefferson", "nm": "Jefferson Station", "walk": 5, "cat": "transit", "bx": 396, "note": "north on 11th to Market St", "bus": null, "px": 379.2, "py": 243.1, "by": 248.1, "d": "M320.8 456.9 L320.8 243.1 L379.2 243.1"}, {"id": "reading", "nm": "Reading Terminal", "walk": 8, "cat": "food", "bx": 266, "note": "west on Walnut, north on 12th", "bus": null, "px": 243.1, "py": 169.2, "by": 140.2, "d": "M320.8 456.9 L243.1 456.9 L243.1 169.2"}, {"id": "washington", "nm": "Washington Square", "walk": 7, "cat": "park", "bx": null, "ralign": true, "note": "east on Walnut to 7th St", "bus": null, "px": 663.1, "py": 495.8, "by": 505.8, "d": "M320.8 456.9 L663.1 456.9 L663.1 495.8"}, {"id": "cityhall", "nm": "City Hall", "walk": 10, "cat": "civic", "bx": 106, "note": "west on Walnut, north on Broad", "bus": {"route": "21", "stops": 3, "off": "Broad & Walnut"}, "px": 87.5, "py": 243.1, "by": 181.1, "d": "M320.8 456.9 L87.5 456.9 L87.5 243.1"}, {"id": "kimmel", "nm": "Kimmel Center", "walk": 9, "cat": "arts", "bx": 98, "note": "west on Walnut, south on Broad", "bus": {"route": "21", "stops": 3, "off": "Broad & Walnut"}, "px": 79.7, "py": 593.1, "by": 564.1, "d": "M320.8 456.9 L87.5 456.9 L87.5 593.1"}];
+  var $=function(i){return document.getElementById(i);};
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
+  function clock(ms){ return new Date(Date.now()+ms).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }
 
-  var $=function(i){return document.getElementById(i);}, NS="http://www.w3.org/2000/svg";
-  var stage=$("stage"), card=$("card"), hint=$("hint"),
-      route=$("route"), routec=$("routec"), bar=$("cBar");
-
-  PLACES.forEach(function(p){
-    var g=document.createElementNS(NS,"g");
-    g.setAttribute("class","poi "+p.cat); g.setAttribute("data-id",p.id);
-    g.setAttribute("role","button"); g.setAttribute("tabindex","0");
-    g.setAttribute("aria-label",p.nm+", "+p.walk+" minute walk");
-
-    var box=document.createElementNS(NS,"rect"); box.setAttribute("class","pill");
-    g.appendChild(box);
-    var ic=document.createElementNS(NS,"circle"); ic.setAttribute("class","ico"); ic.setAttribute("r","12");
-    g.appendChild(ic);
-    var gl=document.createElementNS(NS,"circle"); gl.setAttribute("class","gl"); gl.setAttribute("r","4.2");
-    g.appendChild(gl);
-    var t=document.createElementNS(NS,"text"); t.setAttribute("class","nm"); t.textContent=p.nm;
-    g.appendChild(t);
-    var m=document.createElementNS(NS,"text"); m.setAttribute("class","mn");
-    m.textContent=p.walk+" min walk"; g.appendChild(m);
-
-    var dot=document.createElementNS(NS,"circle"); dot.setAttribute("class","anchor");
-    dot.setAttribute("cx",p.px); dot.setAttribute("cy",p.py); dot.setAttribute("r","6");
-    g.appendChild(dot);
-
-    $("pois").appendChild(g);
-
-    // size the pill to its text
-    var w = Math.max(t.getComputedTextLength(), m.getComputedTextLength());
-    var PW = 40 + w + 18, PH = 58;
-    var bx = (p.bx===null) ? (p.px - 16 - PW) : p.bx;
-    var by = p.by;
-    box.setAttribute("x",bx); box.setAttribute("y",by);
-    box.setAttribute("width",PW); box.setAttribute("height",PH); box.setAttribute("rx","10");
-    ic.setAttribute("cx",bx+21); ic.setAttribute("cy",by+PH/2);
-    gl.setAttribute("cx",bx+21); gl.setAttribute("cy",by+PH/2);
-    t.setAttribute("x",bx+40); t.setAttribute("y",by+25);
-    m.setAttribute("x",bx+40); m.setAttribute("y",by+45);
-
-    g.addEventListener("click",function(){ pick(p); });
-    g.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){e.preventDefault();pick(p);} });
-  });
-
-  // The four routes that actually serve stop 14885.
-  var ROUTES=["9","12","21","42"];
+  var STOP=[39.948704,-75.15883], BUFFER=2;
+  var ROUTES=[
+    {id:"9", dest:"Andorra"}, {id:"12", dest:"50th-Woodland"},
+    {id:"21", dest:"69th St Transit Center"}, {id:"42", dest:"Wycombe"}];
   var SEED={"9":16,"12":9,"21":12,"42":7};
-  var eta={"9":16,"12":9,"21":12,"42":7}, arriving=null, timer=null, current=null;
-  var live=false, demoSpeed=false, tickHandle=null;
-  var POLL_MS=20000, DEMO_MIN_MS=2000, REAL_MIN_MS=60000;
+  // Landmarks from prototype A - tap for a real walking route.
+  var PLACES=[
+    {nm:"Midtown Village", cat:"food", walk:4, ll:[39.9497,-75.1619]},
+    {nm:"Jefferson Station", cat:"transit", walk:5, ll:[39.9522,-75.1580]},
+    {nm:"Reading Terminal", cat:"food", walk:8, ll:[39.9533,-75.1590], right:true},
+    {nm:"Washington Square", cat:"park", walk:7, ll:[39.9466,-75.1524]},
+    {nm:"City Hall", cat:"civic", walk:10, ll:[39.9524,-75.1636], bus:{route:"21",stops:3,off:"Broad & Walnut"}},
+    {nm:"Kimmel Center", cat:"arts", walk:9, ll:[39.9467,-75.1655], bus:{route:"21",stops:3,off:"Broad & Walnut"}}];
+  var CATS=[
+    {id:"food", e:"&#127869;", t:"Restaurants", s:"Eat & drink"},
+    {id:"sights", e:"&#127963;", t:"Sights", s:"Landmarks & culture"},
+    {id:"gems", e:"&#11088;", t:"Local gems", s:"Only-in-Philly spots"},
+    {id:"shops", e:"&#128717;", t:"Shops", s:"Browse & buy"}];
+  var KIND={eat:"Eat", shop:"Browse", see:"See"};
+
+  // ---------------------------------------------------------------- arrivals
+  var eta={}, tracked={}, fake=false, arriving=null, live=false, demoSpeed=false, tickHandle=null;
+  var POLL_MS=20000, DEMO_MIN_MS=2000, REAL_MIN_MS=60000, ARRIVE_MS=6000;
+  $("arrivals").innerHTML=ROUTES.map(function(r){
+    return '<div class="row" id="r'+r.id+'" role="button" tabindex="0"><div class="chip">'+r.id+'</div>'+
+      '<div class="dest">'+r.dest+'</div><div class="delay">Delayed</div><div class="live"></div>'+
+      '<div class="eta"><span class="n">'+SEED[r.id]+'</span><span class="u">min</span></div></div>';
+  }).join("");
+  ROUTES.forEach(function(r){ eta[r.id]=SEED[r.id]; tracked[r.id]=true; });
 
   function setEta(r,n){ $("r"+r).querySelector(".eta .n").textContent=n; }
-  // `late` is SEPTA's own number: how many minutes behind schedule this
-  // vehicle is running. Showing it beats a bare "Delay" - 2 minutes late is a
-  // shrug, 11 minutes late is a decision to walk.
   function setDelay(r,on,mins){
-    var row=$("r"+r);
-    row.classList.toggle("late", !!on);
-    if(on) row.querySelector(".delay").textContent =
-      "Delayed " + (typeof mins === "number" ? mins : "?") + " min";
+    var row=$("r"+r); row.classList.toggle("late",!!on);
+    if(on) row.querySelector(".delay").textContent="Delayed "+(typeof mins==="number"?mins:"?")+" min";
   }
+  function lateOf(r){ var row=$("r"+r); if(!row.classList.contains("late")) return 0;
+    return parseInt((row.querySelector(".delay").textContent.match(/\d+/)||[0])[0],10)||0; }
   function tick(){
     if(arriving) return;
-    ROUTES.forEach(function(r){
-      if(live && $("r"+r).getAttribute("data-tracked")==="0") return;
-      eta[r]--;
-      if(eta[r]<=0) startArriving(r); else setEta(r,eta[r]);
-    });
+    ROUTES.forEach(function(x){ var r=x.id;
+      if(!tracked[r]) return;
+      eta[r]--; if(eta[r]<=0) startArriving(r); else setEta(r,eta[r]); });
   }
-  function tickMs(){ return (live && !demoSpeed) ? REAL_MIN_MS : DEMO_MIN_MS; }
-  function restartTick(){ clearInterval(tickHandle); tickHandle=setInterval(tick, tickMs()); }
-
-  function setLive(on, label){
-    live=on;
-    var el=$("lv");
-    el.className = "lv" + (on ? " on" : "");
-    el.innerHTML = on ? "\u25CF LIVE" : "\u25CB " + (label || "OFFLINE");
-  }
-
-  // Pull live vehicle positions through our own /api/septa function.
+  function restartTick(){ clearInterval(tickHandle); tickHandle=setInterval(tick,(live&&!demoSpeed)?REAL_MIN_MS:DEMO_MIN_MS); }
+  function setLive(on,label){ live=on; $("lv").className="lv"+(on?" on":"");
+    $("lv").innerHTML=on?"● LIVE":"○ "+(label||"OFFLINE"); }
   function poll(){
-    fetch("/api/septa", { cache: "no-store" })
+    fetch("/api/septa",{cache:"no-store"})
       .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
       .then(function(d){
-        (d.arrivals || []).forEach(function(a){
-          var row = $("r" + a.route);
-          if(!row) return;
-          if(a.destination) row.querySelector(".dest").textContent = a.destination;
-
-          // SEPTA reports how many minutes late the vehicle is running; the
-          // function turns that into a boolean and the screen shows the pill.
-          setDelay(a.route, a.delayed && typeof a.minutes === "number", a.late);
-
-          if(typeof a.minutes === "number"){
-            eta[a.route] = Math.max(1, a.minutes);
-            row.setAttribute("data-tracked","1");
-            if(!arriving){
-              if(a.minutes <= 1) startArriving(a.route);
-              else setEta(a.route, eta[a.route]);
-            }
-          } else {
-            // No vehicle currently tracked on this route (late night, or
-            // SEPTA has lost contact). Say so rather than inventing a number.
-            row.setAttribute("data-tracked","0");
-            if(!arriving) setEta(a.route, "--");
-          }
+        (d.arrivals||[]).forEach(function(a){
+          var row=$("r"+a.route); if(!row) return;
+          if(a.destination) row.querySelector(".dest").textContent=a.destination;
+          setDelay(a.route, a.delayed && typeof a.minutes==="number", a.late);
+          if(typeof a.minutes==="number"){
+            eta[a.route]=Math.max(1,a.minutes); tracked[a.route]=true;
+            if(!arriving){ if(a.minutes<=1) startArriving(a.route); else setEta(a.route,eta[a.route]); }
+          } else if(!fake){ tracked[a.route]=false; if(!arriving) setEta(a.route,"--"); }
         });
         setLive(true);
       })
-      .catch(function(){ setLive(false, "DEMO DATA"); })
-      .then(function(){ restartTick(); setTimeout(poll, POLL_MS); });
+      .catch(function(){ setLive(false,"DEMO DATA"); })
+      .then(function(){ restartTick(); setTimeout(poll,POLL_MS); });
   }
   function startArriving(r){
-    arriving=r; clear(true); qClear(true);
-    var row=$("r"+r); row.classList.add("arriving");
-    row.querySelector(".eta .n").textContent="NOW";
+    arriving=r; reset(true);
+    var row=$("r"+r); row.classList.add("arriving"); row.querySelector(".eta .n").textContent="NOW";
     document.body.classList.add("arriving");
     setTimeout(function(){
       row.classList.remove("arriving"); document.body.classList.remove("arriving");
-      eta[r]= SEED[r] + Math.floor(Math.random()*5) - 2;
-      if(eta[r] < 4) eta[r] = 4;
-      setEta(r,eta[r]); arriving=null;
+      eta[r]=Math.max(4,SEED[r]+Math.floor(Math.random()*5)-2); setEta(r,eta[r]); arriving=null;
     },ARRIVE_MS);
   }
 
-  function pick(p){
-    if(arriving) return;
-    qClear(true);
-    current=p;
-    document.querySelectorAll(".poi").forEach(function(g){
-      g.classList.toggle("on", g.getAttribute("data-id")===p.id);
-    });
-    stage.classList.add("picking");
-    route.setAttribute("d",p.d); routec.setAttribute("d",p.d);
-    route.classList.add("on"); routec.classList.add("on");
+  // ---------------------------------------------------------------- map
+  var map=L.map("map",{zoomControl:false,attributionControl:true,scrollWheelZoom:false,
+                       doubleClickZoom:false,boxZoom:false,keyboard:false}).setView(STOP,16);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{
+    subdomains:"abcd", maxZoom:19,
+    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  }).addTo(map);
+  L.marker(STOP,{interactive:false,icon:L.divIcon({className:"",html:'<div class="me"></div>',iconSize:[18,18],iconAnchor:[9,9]})}).addTo(map);
+  L.marker(STOP,{interactive:false,icon:L.divIcon({className:"",html:'<div class="melbl">You are here</div>',iconSize:[90,16],iconAnchor:[45,-14]})}).addTo(map);
 
-    $("cTitle").textContent="To "+p.nm;
-    $("cWalkA").textContent="Walk \u00B7 "+p.walk+" min";
-    $("cWalkB").textContent=p.note;
-    if(p.bus){
-      $("cBusA").textContent="Bus "+p.bus.route+" \u00B7 "+p.bus.stops+" stops";
-      $("cBusB").textContent="boards here in "+eta[p.bus.route]+" min \u00B7 off at "+p.bus.off;
-      $("cBus").style.display=""; $("cSep").style.display="";
-    }else{ $("cBus").style.display="none"; $("cSep").style.display="none"; }
-
-    hint.style.opacity="0"; card.classList.add("up");
-    bar.style.transition="none"; bar.style.transform="scaleX(1)";
-    void bar.getBoundingClientRect();
-    bar.style.transition="transform "+RESULT_MS+"ms linear"; bar.style.transform="scaleX(0)";
-    clearTimeout(timer); timer=setTimeout(function(){ clear(false); }, RESULT_MS);
-  }
-  function clear(instant){
-    clearTimeout(timer); card.classList.remove("up");
-    route.classList.remove("on"); routec.classList.remove("on");
-    stage.classList.remove("picking");
-    document.querySelectorAll(".poi").forEach(function(g){ g.classList.remove("on"); });
-    hint.style.opacity=""; current=null;
-    if(instant){ bar.style.transition="none"; bar.style.transform="scaleX(1)"; }
-  }
-  stage.addEventListener("click",function(e){
-    if(!e.target.closest(".poi") && !e.target.closest(".card") && current) clear(false);
+  var lmMarkers=PLACES.map(function(p,i){
+    var html='<div class="lm '+p.cat+'" data-i="'+i+'"><i></i><span><b>'+esc(p.nm)+'</b><br><small>'+p.walk+' min walk</small></span></div>';
+    var m=L.marker(p.ll,{icon:L.divIcon({className:"",html:html,iconSize:null,iconAnchor:p.right?[0,18]:[0,18]})}).addTo(map);
+    m.on("click",function(){ pickLandmark(i); });
+    return m;
   });
-
-  // ---------------------------------------------------------------------
-  // SIDE QUEST (week 3). Tap the bus you're waiting for -> AI picks three
-  // different things you can do nearby and still be back in time.
-  // /api/quest does the TomTom + AI work; the screen only draws it.
-  // ---------------------------------------------------------------------
-  var BUFFER=2, Q_LIST_MS=30000, Q_DETAIL_MS=25000;
-  var qcard=$("qcard"), qList=$("qList"), qDetail=$("qDetail"), qNote=$("qNote"),
-      qBar=$("qBar"), qpins=$("qpins"), qroute=$("qroute"), qroutec=$("qroutec");
-  var qState=null, qTimer=null, qSeq=0;
-  var STOP={lat:39.948704,lng:-75.15883}, SX=320.8, SY=456.9, KX=48400, KY=63200;
-  function proj(lat,lng){ return [SX+(lng-STOP.lng)*KX, SY-(lat-STOP.lat)*KY]; }
-  function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
-  var KIND={eat:"Eat",shop:"Browse",see:"See"};
-
-  function clock(msFromNow){
-    return new Date(Date.now()+msFromNow).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
+  var layer=L.layerGroup().addTo(map), routeLine=null;
+  function clearLayer(){ layer.clearLayers(); routeLine=null; }
+  function cardPad(){ return [16, Math.min($("stage").clientHeight*0.8, $("card").offsetHeight)+16]; }
+  function frame(latlngs){
+    var b=L.latLngBounds(latlngs.concat([STOP]));
+    map.fitBounds(b,{paddingTopLeft:[40,40],paddingBottomRight:[40,cardPad()[1]],maxZoom:17,animate:true});
   }
-  function runBar(ms){
-    qBar.style.transition="none"; qBar.style.transform="scaleX(1)";
-    void qBar.getBoundingClientRect();
-    qBar.style.transition="transform "+ms+"ms linear"; qBar.style.transform="scaleX(0)";
-    clearTimeout(qTimer); qTimer=setTimeout(function(){ qClear(false); }, ms);
+  function drawRoute(path, dest){
+    if(routeLine) layer.removeLayer(routeLine);
+    var pts=(path&&path.length>1)?path:[STOP,[STOP[0],dest[1]],dest];
+    routeLine=L.layerGroup([
+      L.polyline(pts,{color:"#16407A",weight:11,opacity:.9,lineCap:"round",lineJoin:"round"}),
+      L.polyline(pts,{color:"#F2B233",weight:6,opacity:1,lineCap:"round",lineJoin:"round"})]).addTo(layer);
+    frame(pts);
+  }
+  function resetView(){ map.setView(STOP,16,{animate:true}); }
+  window.addEventListener("resize",function(){ map.invalidateSize(); });
+  setTimeout(function(){ map.invalidateSize(); },300);
+
+  // ---------------------------------------------------------------- card
+  var card=$("card"), state=null, timer=null, seq=0;
+  function show(html, ms){
+    card.innerHTML=html+'<div class="bar"><i id="bar"></i></div>';
+    card.classList.add("up"); document.body.classList.add("busy"); $("hint").style.opacity="0";
+    var bar=$("bar"); bar.style.transition="none"; bar.style.transform="scaleX(1)"; void bar.offsetWidth;
+    bar.style.transition="transform "+ms+"ms linear"; bar.style.transform="scaleX(0)";
+    clearTimeout(timer); timer=setTimeout(function(){ reset(false); },ms);
+    var x=card.querySelector(".x"); if(x) x.onclick=function(e){ e.stopPropagation(); reset(false); };
+  }
+  function kick(txt, ai){ return '<div class="kick"><span>'+txt+'</span>'+(ai?'<span class="ai">AI</span>':'')+'<button class="x">Close</button></div>'; }
+  function reset(instant){
+    seq++; clearTimeout(timer); state=null;
+    card.classList.remove("up"); clearLayer();
+    document.body.classList.remove("busy");
+    document.querySelectorAll(".row").forEach(function(r){ r.classList.remove("sel"); });
+    document.querySelectorAll(".big").forEach(function(b){ b.classList.remove("on"); });
+    document.querySelectorAll(".lm").forEach(function(b){ b.classList.remove("on"); });
+    $("hint").style.opacity=""; resetView();
+  }
+  function loading(title, msg){
+    show(kick(title,true)+'<div class="note wait">'+msg+'</div><div class="list"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>', 30000);
   }
 
-  function quest(r){
+  // ---- Long wait? -> pick your bus
+  function pickBus(){
     if(arriving) return;
-    var m = eta[r];
-    // No tracked bus: nothing honest to plan around.
-    if(typeof m!=="number" || $("r"+r).getAttribute("data-tracked")==="0") return;
-    clear(true); qClear(true);
-    var seq=++qSeq;
-    qState={route:r, minutes:m, at:Date.now(), options:[]};
-    ROUTES.forEach(function(x){ $("r"+x).classList.toggle("sel", x===r); });
-    document.body.classList.add("questing"); stage.classList.add("questing");
-    hint.style.opacity="0";
-
-    $("qKick").textContent="Side quest · waiting for the "+r;
-    $("qAi").style.display="";
-    qNote.className="note wait";
-    qNote.textContent="Checking the "+r+"'s live position, the clock and the weather…";
-    qList.innerHTML='<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
-    qDetail.hidden=true; qList.hidden=false; $("qSrc").textContent="";
-    qcard.classList.add("up"); runBar(Q_LIST_MS);
-
-    var late = $("r"+r).classList.contains("late") ? (parseInt(($("r"+r).querySelector(".delay").textContent.match(/\d+/)||[0])[0],10)||0) : 0;
-    fetch("/api/quest?route="+r+"&minutes="+m+"&late="+late, {cache:"no-store"})
-      .then(function(res){ if(!res.ok) throw new Error(res.status); return res.json(); })
-      .catch(function(){ return offlineQuest(r,m); })
-      .then(function(d){ if(seq===qSeq && qState) showOptions(d); });
+    reset(true); $("bWait").classList.add("on");
+    var any=false;
+    var btns=ROUTES.map(function(r){
+      var ok=tracked[r.id] && typeof eta[r.id]==="number"; if(ok) any=true;
+      return '<button class="opt busbtn" data-r="'+r.id+'"'+(ok?'':' disabled')+'><span class="chip" style="background:#4A5058">'+r.id+'</span>'+
+        '<span class="t" style="align-self:center">'+esc($("r"+r.id).querySelector(".dest").textContent)+'</span>'+
+        '<span class="eta2">'+(ok?eta[r.id]+" min":"--")+'</span></button>';
+    }).join("");
+    show(kick("Long wait?",false)+'<div class="note">'+(any?"Which bus are you waiting for?":"No buses are being tracked right now.")+'</div><div class="list">'+btns+'</div>', 20000);
+    card.querySelectorAll(".busbtn").forEach(function(b){ b.onclick=function(e){ e.stopPropagation(); quest(b.getAttribute("data-r")); }; });
   }
 
-  // Only used when /api/quest can't be reached at all (opened as a file).
-  function offlineQuest(r,m){
-    var b=m-BUFFER;
-    if(b<5) return {stay:true, note:"Bus "+r+" is almost here - better stay put.", options:[], ai:false, sample:true};
-    return {ai:false, sample:true, note:"", options:[
-      {name:"Midtown Village", bucket:"eat", category:"cafés", lat:39.9495, lon:-75.1619, walk:3, dwell:Math.min(5,b-6), pitch:""},
-      {name:"Jefferson Station shops", bucket:"shop", category:"shops", lat:39.9520, lon:-75.1580, walk:4, dwell:Math.min(6,b-8), pitch:""},
-      {name:"Washington Square", bucket:"see", category:"park", lat:39.9469, lon:-75.1524, walk:6, dwell:Math.min(4,b-12), pitch:""}
-    ].filter(function(o){ return o.dwell>=2; })};
+  // ---- Explore nearby -> pick a category
+  function pickCat(){
+    if(arriving) return;
+    reset(true); $("bExplore").classList.add("on");
+    var btns=CATS.map(function(c){
+      return '<button class="opt cat" data-c="'+c.id+'"><span class="e">'+c.e+'</span><span class="t">'+c.t+'</span><span class="m">'+c.s+'</span></button>';
+    }).join("");
+    show(kick("Explore nearby",false)+'<div class="note">What are you in the mood for?</div><div class="grid">'+btns+'</div>', 20000);
+    card.querySelectorAll(".cat").forEach(function(b){ b.onclick=function(e){ e.stopPropagation(); explore(b.getAttribute("data-c")); }; });
   }
 
-  function showOptions(d){
-    qState.options=d.options||[];
-    $("qAi").style.display = d.ai ? "" : "none";
-    $("qSrc").textContent = (d.ai ? "Picked by AI" : "AI offline · closest places") +
-      (d.sample ? " · sample places" : " · places & routes: TomTom") +
-      " · times are estimates";
-    if(d.stay || !qState.options.length){
-      qNote.className="note"; qNote.textContent=d.note||("Bus "+qState.route+" is almost here - better stay put.");
-      qList.innerHTML=""; runBar(8000); return;
+  // ---- AI calls
+  function quest(r){
+    if(arriving || !tracked[r] || typeof eta[r]!=="number") return;
+    reset(true); var my=++seq;
+    $("bWait").classList.add("on"); $("r"+r).classList.add("sel"); document.body.classList.add("busy");
+    state={mode:"wait", route:r, minutes:eta[r], options:[]};
+    loading("Waiting for the "+r, "Checking the "+r+"'s live position, what's open, and the weather…");
+    get("/api/quest?mode=wait&route="+r+"&minutes="+eta[r]+"&late="+lateOf(r), my);
+  }
+  function explore(c){
+    reset(true); var my=++seq;
+    $("bExplore").classList.add("on"); document.body.classList.add("busy");
+    var cat=CATS.filter(function(x){return x.id===c;})[0];
+    state={mode:"explore", cat:c, catName:cat.t, options:[]};
+    loading(cat.t+" nearby", "Checking what's open around 11th & Walnut…");
+    get("/api/quest?mode=explore&cat="+c, my);
+  }
+  function get(url,my){
+    fetch(url,{cache:"no-store"})
+      .then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); })
+      .catch(function(){ return {error:"offline", options:[]}; })
+      .then(function(d){ if(my===seq && state) options(d); });
+  }
+
+  function options(d){
+    var title = state.mode==="wait" ? "Waiting for the "+state.route : state.catName+" nearby";
+    state.options=d.options||[];
+    var src='<div class="src">'+(d.ai?"Picked by AI":"AI offline · closest open places")+
+      ' · places, hours & routes: TomTom'+(state.mode==="wait"?" · bus times are estimates":"")+'</div>';
+    if(d.error && !state.options.length){
+      show(kick(title,false)+'<div class="note">Can’t reach the recommendation service right now.</div>',8000); return;
     }
-    qNote.className="note";
-    qNote.textContent = d.note || ("Three things that fit before the "+qState.route+":");
-    qList.innerHTML="";
-    qpins.innerHTML="";
-    qState.options.forEach(function(o,i){
-      var btn=document.createElement("button");
-      btn.className="qo "+o.bucket;
-      btn.innerHTML='<span class="num">'+(i+1)+'</span><span><div class="t">'+esc(o.name)+'</div>'+
-        '<div class="m">'+KIND[o.bucket]+' · '+o.walk+' min walk · '+o.dwell+' min there</div>'+
-        (o.pitch?'<div class="p">'+esc(o.pitch)+'</div>':'')+'</span>';
-      btn.addEventListener("click",function(e){ e.stopPropagation(); choose(i); });
-      qList.appendChild(btn);
+    if(!state.options.length){
+      show(kick(title,d.ai)+'<div class="note">'+esc(d.note||"Nothing fits right now.")+'</div>'+src, 9000); return;
+    }
+    var html=state.options.map(function(o,i){
+      var line = state.mode==="wait"
+        ? KIND[o.kind]+' · '+o.walk+' min walk · '+o.dwell+' min there'
+        : o.walk+' min walk · '+esc(o.category);
+      return '<button class="opt '+o.kind+'" data-i="'+i+'"><span class="num">'+(i+1)+'</span><span>'+
+        '<div class="t">'+esc(o.name)+'</div><div class="m">'+line+' · <span class="'+(o.open?'open':'')+'">'+esc(o.hours)+'</span></div>'+
+        (o.pitch?'<div class="p">'+esc(o.pitch)+'</div>':'')+'</span></button>';
+    }).join("");
+    show(kick(title,d.ai)+'<div class="note">'+esc(d.note||"Three picks for you:")+'</div><div class="list">'+html+'</div>'+src, 30000);
+    card.querySelectorAll(".opt").forEach(function(b){ b.onclick=function(e){ e.stopPropagation(); choose(+b.getAttribute("data-i")); }; });
 
-      var xy=proj(o.lat,o.lon);
-      var g=document.createElementNS(NS,"g"); g.setAttribute("class","qpin "+o.bucket);
-      g.innerHTML='<circle class="ring" cx="'+xy[0]+'" cy="'+xy[1]+'" r="26"/>'+
-        '<circle cx="'+xy[0]+'" cy="'+xy[1]+'" r="17"/>'+
-        '<text x="'+xy[0]+'" y="'+(xy[1]+7.5)+'" text-anchor="middle">'+(i+1)+'</text>';
-      g.addEventListener("click",function(e){ e.stopPropagation(); choose(i); });
-      qpins.appendChild(g);
+    clearLayer();
+    state.pins=state.options.map(function(o,i){
+      var m=L.marker([o.lat,o.lon],{icon:L.divIcon({className:"",html:'<div class="pin '+o.kind+'">'+(i+1)+'</div>',iconSize:[32,32],iconAnchor:[16,16]})}).addTo(layer);
+      m.on("click",function(){ choose(i); }); return m;
     });
-    runBar(Q_LIST_MS);
-  }
-
-  function pathD(o){
-    if(o.path && o.path.length>1){
-      return o.path.map(function(p,i){ var xy=proj(p[0],p[1]); return (i?"L":"M")+xy[0].toFixed(1)+" "+xy[1].toFixed(1); }).join(" ");
-    }
-    var xy=proj(o.lat,o.lon);     // no route from TomTom: walk the grid
-    return "M"+SX+" "+SY+" L"+xy[0].toFixed(1)+" "+SY+" L"+xy[0].toFixed(1)+" "+xy[1].toFixed(1);
+    setTimeout(function(){ frame(state.options.map(function(o){return [o.lat,o.lon];})); },60);
   }
 
   function choose(i){
-    var o=qState && qState.options[i]; if(!o) return;
-    var r=qState.route, left=eta[r];
-    var d=pathD(o);
-    qroute.setAttribute("d",d); qroutec.setAttribute("d",d);
-    qroute.classList.add("on"); qroutec.classList.add("on");
-    Array.prototype.forEach.call(qpins.children,function(g,j){
-      g.classList.toggle("on", j===i); g.classList.toggle("dim", j!==i);
-    });
-    qList.hidden=true; qDetail.hidden=false;
-    qNote.className="note"; qNote.textContent=o.pitch || (KIND[o.bucket]+" · "+o.category);
-    qDetail.innerHTML='<div class="name">'+esc(o.name)+'</div>'+
-      '<div class="steps"><b>Walk '+o.walk+' min</b>→<b>'+o.dwell+' min there</b>→<b>Walk '+o.walk+' min</b></div>'+
-      '<div class="back"><span class="l">Back by</span><span class="v">'+clock((left-BUFFER)*60000)+'</span>'+
-      '<span class="s">Bus '+r+' due ~'+clock(left*60000)+'<br>we leave you '+BUFFER+' min spare</span></div>';
-    runBar(Q_DETAIL_MS);
+    var o=state && state.options[i]; if(!o) return;
+    (state.pins||[]).forEach(function(m,j){ var el=m.getElement(); if(el){ var p=el.querySelector(".pin");
+      p.classList.toggle("on",j===i); p.classList.toggle("dim",j!==i); } });
+    var hrs='<div class="hrs'+(o.open?'':' unk')+'">'+esc(o.hours)+'</div>';
+    var body;
+    if(state.mode==="wait"){
+      var left=eta[state.route];
+      body='<div class="name">'+esc(o.name)+'</div>'+hrs+
+        '<div class="steps"><b>Walk '+o.walk+' min</b>→<b>'+o.dwell+' min there</b>→<b>Walk '+o.walk+' min</b></div>'+
+        '<div class="back"><span class="l">Back by</span><span class="v">'+clock((left-BUFFER)*60000)+'</span>'+
+        '<span class="s">Bus '+state.route+' due ~'+clock(left*60000)+'<br>we leave you '+BUFFER+' min spare</span></div>';
+    } else {
+      body='<div class="name">'+esc(o.name)+'</div>'+hrs+
+        '<div class="steps"><b>Walk '+o.walk+' min</b><span>from this stop</span></div>';
+    }
+    show(kick(state.mode==="wait"?"Side quest":"Explore",true)+(o.pitch?'<div class="note">'+esc(o.pitch)+'</div>':'')+body+
+      '<div class="src">Route: TomTom · map: OpenStreetMap / CARTO</div>', 25000);
+    setTimeout(function(){ drawRoute(o.path,[o.lat,o.lon]); },60);
   }
 
-  function qClear(instant){
-    qSeq++; clearTimeout(qTimer); qState=null;
-    qcard.classList.remove("up");
-    qroute.classList.remove("on"); qroutec.classList.remove("on");
-    qpins.innerHTML="";
-    document.body.classList.remove("questing"); stage.classList.remove("questing");
-    ROUTES.forEach(function(x){ $("r"+x).classList.remove("sel"); });
-    if(!current) hint.style.opacity="";
-    if(instant){ qBar.style.transition="none"; qBar.style.transform="scaleX(1)"; }
+  // ---- landmarks from prototype A: tap for a real walking route
+  function pickLandmark(i){
+    if(arriving) return;
+    var p=PLACES[i]; reset(true); var my=++seq;
+    state={mode:"landmark"};
+    document.querySelectorAll(".lm").forEach(function(el){ el.classList.toggle("on",+el.getAttribute("data-i")===i); });
+    var busLine = p.bus ? '<div class="steps"><b>Bus '+p.bus.route+' · '+p.bus.stops+' stops</b><span>boards here in '+eta[p.bus.route]+' min · off at '+p.bus.off+'</span></div>' : '';
+    function render(walk){
+      show(kick("To "+esc(p.nm),false)+'<div class="steps"><b>Walk '+walk+' min</b><span>from this stop</span></div>'+busLine+
+        '<div class="src">Route: TomTom · map: OpenStreetMap / CARTO</div>',15000);
+    }
+    render(p.walk);
+    fetch("/api/quest?mode=route&lat="+p.ll[0]+"&lon="+p.ll[1]).then(function(r){return r.json();})
+      .catch(function(){ return {walk:p.walk, path:null}; })
+      .then(function(d){ if(my!==seq) return; render(d.walk||p.walk); drawRoute(d.path,p.ll); });
   }
 
+  // ---------------------------------------------------------------- wiring
+  $("bWait").onclick=function(){ pickBus(); };
+  $("bExplore").onclick=function(){ pickCat(); };
   ROUTES.forEach(function(r){
-    var row=$("r"+r);
-    row.setAttribute("role","button"); row.setAttribute("tabindex","0");
-    row.addEventListener("click",function(){ quest(r); });
-    row.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); quest(r); } });
+    var row=$("r"+r.id);
+    row.addEventListener("click",function(){ quest(r.id); });
+    row.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); quest(r.id); } });
   });
-  stage.addEventListener("click",function(e){
-    if(qState && !e.target.closest(".card") && !e.target.closest(".qpin")) qClear(false);
-  });
+  map.on("click",function(){ if(state) reset(false); });
 
-  ROUTES.forEach(function(r){ setEta(r, eta[r]); });
-  restartTick();
-  poll();
+  restartTick(); poll();
 
   // Recording helpers, invisible on screen:
-  //   b = force the next 21 to arrive now
-  //   d = toggle demo speed (1 transit-minute every 2s instead of real time)
-  //   l = toggle the red Delay pill on route 42 (to film the delayed state)
-  //   r = reset
+  //   b = force the next 21 to arrive now      d = toggle demo speed
+  //   l = toggle the Delay pill on route 42    r = reset
+  //   f = fake buses (use at night when SEPTA isn't tracking anything)
   document.addEventListener("keydown",function(e){
     if(e.key==="b" && !arriving) startArriving("21");
     if(e.key==="d"){ demoSpeed=!demoSpeed; restartTick(); }
-    if(e.key==="l"){
-      var on = !$("r42").classList.contains("late");
-      setDelay("42", on, 6);
-    }
-    if(e.key==="r"){
-      clear(true); qClear(true);
-      ROUTES.forEach(function(r){ eta[r]=SEED[r]; setEta(r,SEED[r]); setDelay(r,false); });
-    }
+    if(e.key==="l"){ setDelay("42", !$("r42").classList.contains("late"), 6); }
+    if(e.key==="f"){ fake=true; ROUTES.forEach(function(r){ tracked[r.id]=true; eta[r.id]=SEED[r.id]+4; setEta(r.id,eta[r.id]); }); }
+    if(e.key==="r"){ reset(true); ROUTES.forEach(function(r){ eta[r.id]=SEED[r.id]; setEta(r.id,SEED[r.id]); setDelay(r.id,false); }); }
   });
 })();
 </script>
