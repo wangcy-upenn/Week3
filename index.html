@@ -274,8 +274,23 @@
   }
 
   // ---------------------------------------------------------------- map
-  var map=L.map("map",{zoomControl:false,attributionControl:true,scrollWheelZoom:false,
-                       doubleClickZoom:false,boxZoom:false,keyboard:false}).setView(STOP,16);
+  // Like a phone map: pinch / scroll to zoom, drag to pan, + / - buttons, and a
+  // "back to this stop" button. Starts close in, centred on the stop.
+  var ZOOM=18;
+  var map=L.map("map",{zoomControl:false,attributionControl:true,minZoom:14,maxZoom:19,
+                       bounceAtZoomLimits:false}).setView(STOP,ZOOM);
+  L.control.zoom({position:"topright"}).addTo(map);
+  var Home=L.Control.extend({options:{position:"topright"},onAdd:function(){
+    var b=L.DomUtil.create("button","home"); b.innerHTML="&#9678;"; b.title="Back to this stop";
+    L.DomEvent.disableClickPropagation(b);
+    b.onclick=function(){ map.setView(STOP,ZOOM,{animate:true}); };
+    return b; }});
+  map.addControl(new Home());
+  // Public screen: 40 s after the last touch, drift back to the stop for the next person.
+  var idle=null;
+  map.on("movestart zoomstart",function(){ clearTimeout(idle); });
+  map.on("moveend",function(){ clearTimeout(idle);
+    idle=setTimeout(function(){ if(!state) map.setView(STOP,ZOOM,{animate:true}); },40000); });
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
     maxZoom:19, className:"darkmap",
     attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
