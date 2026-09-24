@@ -290,13 +290,14 @@
       .catch(function(){ setLive(false,"DEMO DATA"); })
       .then(function(){ restartTick(); setTimeout(poll,POLL_MS); });
   }
+    // A bus arriving only lights up its own row. The rest of the screen keeps working,
+  // because the person using the map is probably waiting for a different bus.
   function startArriving(r){
-    arriving=r; reset(true);
-    var row=$("r"+r); row.classList.add("arriving"); row.querySelector(".eta .n").textContent="NOW";
-    document.body.classList.add("arriving");
+    var row=$("r"+r); if(row.classList.contains("arriving")) return;
+    row.classList.add("arriving"); row.querySelector(".eta .n").textContent="NOW";
     setTimeout(function(){
-      row.classList.remove("arriving"); document.body.classList.remove("arriving");
-      eta[r]=Math.max(4,SEED[r]+Math.floor(Math.random()*5)-2); setEta(r,eta[r]); arriving=null;
+      row.classList.remove("arriving");
+      eta[r]=Math.max(4,SEED[r]+Math.floor(Math.random()*5)-2); setEta(r,eta[r]);
     },ARRIVE_MS);
   }
 
