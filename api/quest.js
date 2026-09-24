@@ -304,8 +304,8 @@ export default async function handler(req, res) {
       picks.push({ o, c: cands[id] });
     }
     const checked = await Promise.all(picks.slice(0, 4).map(async ({ o, c }) => {
-            let walk = c.walk, path = null;
-      try { ({ walk, path } = await walkRoute(tomtom, c.lat, c.lon)); } catch {}
+      let walk = c.walk, path = null, steps = [];
+      try { ({ walk, path, steps } = await walkRoute(tomtom, c.lat, c.lon)); } catch {}
       let dwell = Math.max(1, Math.round(Number(o.dwell) || 0));
       if (mode === "wait") {
         dwell = Math.min(dwell, budget - 2 * walk);
