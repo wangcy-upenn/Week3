@@ -319,7 +319,7 @@
       L.polyline(pts,{color:"#F2B233",weight:6,opacity:1,lineCap:"round",lineJoin:"round"})]).addTo(layer);
     frame(pts);
   }
-  function resetView(){ map.setView(STOP,16,{animate:true}); }
+    function resetView(){ map.setView(STOP,ZOOM,{animate:true}); }
   window.addEventListener("resize",function(){ map.invalidateSize(); });
   setTimeout(function(){ map.invalidateSize(); },300);
 
