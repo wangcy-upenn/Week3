@@ -121,6 +121,7 @@ async function askDeepSeek(key, user) {
       model: process.env.DEEPSEEK_MODEL || "deepseek-flash",
       max_tokens: 400,
       response_format: { type: "json_object" },
+      thinking: { type: "disabled" },
       messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }],
     }),
   }, 8000);
