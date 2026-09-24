@@ -14,19 +14,21 @@
 //
 // Environment variables (Vercel -> Project -> Settings -> Environment Variables):
 //   TOMTOM_API_KEY      required for real places + routes
-//   ANTHROPIC_API_KEY   required for the AI step
-//   ANTHROPIC_MODEL     optional, defaults to claude-haiku-4-5
+//   AI step - set ONE of these:
+//     DEEPSEEK_API_KEY    (cheapest; DEEPSEEK_MODEL optional, default deepseek-flash)
+//     ANTHROPIC_API_KEY   (ANTHROPIC_MODEL optional, default claude-haiku-4-5)
+//   If both are set, DeepSeek is used.
 // Missing keys never break the screen: it falls back to sample places and a
 // rule-based pick, and says so in the response (`ai: false`, `sample: true`).
- 
+
 const STOP = { lat: 39.948704, lng: -75.15883 };
- 
+
 const BUFFER_MIN = 2; // be back at the stop this long before the bus
 const MIN_BUDGET = 5; // below this, don't send anyone away
 const WALK_M_PER_MIN = 78; // ~1.3 m/s
 const GRID_FACTOR = 1.3; // grid streets: walking distance > straight line
 const MIN_DWELL = { eat: 3, shop: 4, see: 2 };
- 
+
 // TomTom POI classification codes -> the three kinds of option we offer.
 const BUCKET = {
   CAFE_PUB: "eat", RESTAURANT: "eat", MARKET: "shop", SHOP: "shop",
@@ -37,7 +39,7 @@ const BUCKET = {
 // café/pub, restaurant, shop, market, museum, important tourist attraction,
 // park, theater
 const CATEGORY_SET = "9376,7315,9361,7332,7317,7376,9362,7318";
- 
+
 // Used only when there is no TomTom key: the landmarks prototype A already
 // shows on its map. Clearly marked as sample data in the response.
 const SAMPLE = [
@@ -47,7 +49,7 @@ const SAMPLE = [
   { name: "Washington Square", bucket: "see", category: "park", lat: 39.9469, lon: -75.1524 },
   { name: "City Hall", bucket: "see", category: "landmark", lat: 39.9524, lon: -75.1636 },
 ];
- 
+
 function haversine(aLat, aLng, bLat, bLng) {
   const R = 6371000, r = (d) => (d * Math.PI) / 180;
   const s = Math.sin(r(bLat - aLat) / 2) ** 2 +
@@ -56,7 +58,7 @@ function haversine(aLat, aLng, bLat, bLng) {
 }
 const walkMin = (lat, lon) =>
   Math.max(1, Math.ceil((haversine(STOP.lat, STOP.lng, lat, lon) * GRID_FACTOR) / WALK_M_PER_MIN));
- 
+
 async function getJSON(url, opts = {}, ms = 4000) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), ms);
@@ -66,7 +68,7 @@ async function getJSON(url, opts = {}, ms = 4000) {
     return await r.json();
   } finally { clearTimeout(t); }
 }
- 
+
 // ---- 1. places (TomTom) ---------------------------------------------------
 async function nearbyPlaces(key, radius) {
   const base = "https://api.tomtom.com/search/2/nearbySearch/.json?key=" + key +
@@ -90,7 +92,7 @@ async function nearbyPlaces(key, radius) {
   }
   return out;
 }
- 
+
 // ---- 2. context the AI reads ---------------------------------------------
 async function weatherLine() {
   try {
@@ -107,12 +109,12 @@ function localTime() {
     timeZone: "America/New_York", weekday: "long", hour: "numeric", minute: "2-digit",
   });
 }
- 
+
 // ---- 3. the AI step -------------------------------------------------------
 const SYSTEM = `You are the brain of a bus-stop screen at 11th & Walnut St, Philadelphia.
 A rider just tapped the bus they are waiting for. They have a few minutes to kill.
 Pick exactly 3 things they could do nearby and still be back in time.
- 
+
 Rules:
 - Round trip must fit: 2 x walk + dwell <= budget. "walk" is given per place. You choose "dwell" (minutes spent there).
 - Make the 3 options different kinds when possible: one "eat", one "shop", one "see".
@@ -122,16 +124,38 @@ Rules:
 - "note": one short sentence (max 70 chars) framing the moment for the rider.
 Reply with JSON only:
 {"note":"...","options":[{"id":<number>,"dwell":<minutes>,"pitch":"..."}]}`;
- 
+
+// DeepSeek speaks the OpenAI chat format. Used when DEEPSEEK_API_KEY is set.
+async function askDeepSeek(key, user) {
+  const j = await getJSON("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer " + key },
+    body: JSON.stringify({
+      model: process.env.DEEPSEEK_MODEL || "deepseek-flash",
+      max_tokens: 400,
+      response_format: { type: "json_object" },
+      messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }],
+    }),
+  }, 8000);
+  return (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "";
+}
+
 async function askAI(ctx, candidates) {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return null;
   const list = candidates.map((c, i) =>
     `${i}. ${c.name} | ${c.bucket} | ${c.category} | walk ${c.walk} min`).join("\n");
   const user =
     `Bus ${ctx.route} arrives in ${ctx.minutes} min${ctx.late ? ` (running ${ctx.late} min late)` : ""}.\n` +
     `Budget (must be back ${BUFFER_MIN} min early): ${ctx.budget} min.\n` +
     `Local time: ${ctx.time}. Weather: ${ctx.weather}.\n\nPlaces:\n${list}`;
+
+  if (process.env.DEEPSEEK_API_KEY) {
+    const text = await askDeepSeek(process.env.DEEPSEEK_API_KEY, user);
+    const m = text.match(/\{[\s\S]*\}/);
+    return m ? JSON.parse(m[0]) : null;
+  }
+
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return null;
   const j = await getJSON("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -150,7 +174,7 @@ async function askAI(ctx, candidates) {
   const m = text.match(/\{[\s\S]*\}/);
   return m ? JSON.parse(m[0]) : null;
 }
- 
+
 // Rule-based stand-in when the AI is unavailable: closest place per kind.
 function rulePick(candidates, budget) {
   const out = [];
@@ -160,7 +184,7 @@ function rulePick(candidates, budget) {
   }
   return { note: "", options: out };
 }
- 
+
 // ---- 4. real walking route (TomTom) --------------------------------------
 async function walkRoute(key, lat, lon) {
   const url = "https://api.tomtom.com/routing/1/calculateRoute/" +
@@ -173,7 +197,7 @@ async function walkRoute(key, lat, lon) {
     path: r.legs[0].points.map((p) => [p.latitude, p.longitude]),
   };
 }
- 
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   const q = req.query || {};
@@ -181,45 +205,45 @@ export default async function handler(req, res) {
   const minutes = Math.max(0, parseInt(q.minutes, 10) || 0);
   const late = parseInt(q.late, 10) || 0;
   const budget = minutes - BUFFER_MIN;
- 
+
   if (budget < MIN_BUDGET) {
     return res.status(200).json({
       route, minutes, budget, stay: true, options: [],
       note: `Bus ${route} is almost here - better stay put.`,
     });
   }
- 
+
   const tomtom = process.env.TOMTOM_API_KEY;
   // Farthest one-way walk that could still leave 2 minutes inside.
   const maxWalk = Math.floor((budget - 2) / 2);
   const radius = Math.min(900, Math.round((maxWalk * WALK_M_PER_MIN) / GRID_FACTOR));
- 
+
   try {
     let places, sample = false;
     try {
       places = tomtom ? await nearbyPlaces(tomtom, radius) : null;
     } catch { places = null; }
     if (!places || !places.length) { places = SAMPLE; sample = true; }
- 
+
     // Hard filter first: only places where a round trip + minimum stay fits.
     const candidates = places
       .map((p) => ({ ...p, walk: walkMin(p.lat, p.lon) }))
       .filter((p) => 2 * p.walk + MIN_DWELL[p.bucket] <= budget)
       .sort((a, b) => a.walk - b.walk)
       .slice(0, 24);
- 
+
     if (!candidates.length) {
       return res.status(200).json({
         route, minutes, budget, stay: true, options: [], sample,
         note: `Nothing fits in ${budget} minutes - the ${route} is close.`,
       });
     }
- 
+
     const ctx = { route, minutes, late, budget, time: localTime(), weather: await weatherLine() };
     let pick = null, ai = false;
     try { pick = await askAI(ctx, candidates); ai = !!pick; } catch { pick = null; }
     if (!pick || !Array.isArray(pick.options)) pick = rulePick(candidates, budget);
- 
+
     // Validate the AI's picks against real walking routes. Anything that no
     // longer fits is trimmed (shorter stay) or dropped.
     const used = new Set();
@@ -246,7 +270,7 @@ export default async function handler(req, res) {
       };
     }));
     const options = checked.filter(Boolean).slice(0, 3);
- 
+
     res.status(200).json({
       route, minutes, budget, late, ai, sample,
       note: String(pick.note || "").slice(0, 80),
