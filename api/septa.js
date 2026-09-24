@@ -1,281 +1,187 @@
-// Vercel serverless function - "Side Quest".
+// Vercel serverless function.
 //
-// A rider taps the bus they are waiting for. This function answers:
-// "what can I actually do nearby and still be back before that bus comes?"
+// Why this file exists: the browser cannot call www3.septa.org directly
+// (no CORS headers on SEPTA's API), so the page calls /api/septa on its own
+// origin and this function does the cross-origin call server-side.
 //
-// Who does what:
-//   TomTom          -> real places near the stop + real walking routes
-//   AI (Claude)     -> reads the live situation (minutes left, delay, time of
-//                      day, weather) and picks 3 different things worth doing,
-//                      with how long to spend inside and a one-line pitch
-//   hard code       -> checks the AI's time math. The AI suggests, the code
-//                      guarantees nobody is sent somewhere they can't get back
-//                      from in time.
-//
-// Environment variables (Vercel -> Project -> Settings -> Environment Variables):
-//   TOMTOM_API_KEY      required for real places + routes
-//   AI step - set ONE of these:
-//     DEEPSEEK_API_KEY    (cheapest; DEEPSEEK_MODEL optional, default deepseek-flash)
-//     ANTHROPIC_API_KEY   (ANTHROPIC_MODEL optional, default claude-haiku-4-5)
-//   If both are set, DeepSeek is used.
-// Missing keys never break the screen: it falls back to sample places and a
-// rule-based pick, and says so in the response (`ai: false`, `sample: true`).
+// SEPTA has no "minutes until this bus reaches this stop" endpoint, so we
+// compute the estimate here from each vehicle's live position. That estimate
+// is HARD CODE: an explicit, rule-based calculation.
 
-const STOP = { lat: 39.948704, lng: -75.15883 };
-
-const BUFFER_MIN = 2; // be back at the stop this long before the bus
-const MIN_BUDGET = 5; // below this, don't send anyone away
-const WALK_M_PER_MIN = 78; // ~1.3 m/s
-const GRID_FACTOR = 1.3; // grid streets: walking distance > straight line
-const MIN_DWELL = { eat: 3, shop: 4, see: 2 };
-
-// TomTom POI classification codes -> the three kinds of option we offer.
-const BUCKET = {
-  CAFE_PUB: "eat", RESTAURANT: "eat", MARKET: "shop", SHOP: "shop",
-  SHOPPING_CENTER: "shop", MUSEUM: "see", IMPORTANT_TOURIST_ATTRACTION: "see",
-  TOURIST_ATTRACTION: "see", PARK_RECREATION_AREA: "see", THEATER: "see",
-  CULTURAL_CENTER: "see", PLACE_OF_WORSHIP: "see", LIBRARY: "see",
+const STOP = {
+  id: "14885",
+  name: "Walnut St & 11th St",
+  lat: 39.948704,
+  lng: -75.15883,
 };
-// café/pub, restaurant, shop, market, museum, important tourist attraction,
-// park, theater
-const CATEGORY_SET = "9376,7315,9361,7332,7317,7376,9362,7318";
 
-// Used only when there is no TomTom key: the landmarks prototype A already
-// shows on its map. Clearly marked as sample data in the response.
-const SAMPLE = [
-  { name: "Reading Terminal Market", bucket: "eat", category: "market hall", lat: 39.9533, lon: -75.1592 },
-  { name: "Midtown Village", bucket: "eat", category: "restaurants & cafés", lat: 39.9495, lon: -75.1619 },
-  { name: "Jefferson Station shops", bucket: "shop", category: "shops", lat: 39.9520, lon: -75.1580 },
-  { name: "Washington Square", bucket: "see", category: "park", lat: 39.9469, lon: -75.1524 },
-  { name: "City Hall", bucket: "see", category: "landmark", lat: 39.9524, lon: -75.1636 },
+// The four routes that actually serve stop 14885, confirmed against
+// https://www3.septa.org/api/Stops/index.php?req1=<route>
+// The fallback headsign is only used when no vehicle is being tracked;
+// the live feed's own `destination` wins whenever we have one.
+const ROUTES = [
+  { id: "9", headsign: "Andorra" },
+  { id: "12", headsign: "50th-Woodland" },
+  { id: "21", headsign: "69th St Transit Center" },
+  { id: "42", headsign: "Wycombe" },
 ];
 
-function haversine(aLat, aLng, bLat, bLng) {
-  const R = 6371000, r = (d) => (d * Math.PI) / 180;
-  const s = Math.sin(r(bLat - aLat) / 2) ** 2 +
-    Math.cos(r(aLat)) * Math.cos(r(bLat)) * Math.sin(r(bLng - aLng) / 2) ** 2;
+// --- tuning constants for the ETA estimate -------------------------------
+const GRID_FACTOR = 1.25; // streets are a grid, so road distance > straight line
+const BUS_SPEED_MS = 3.1; // ~7 mph average in Center City, including dwell time
+const MAX_MINUTES = 45; // ignore vehicles further out than this
+const LAT_BAND = 0.004; // ~440 m: keeps buses on the Walnut St corridor
+const DELAY_MIN = 2; // minutes late before the screen calls it a delay
+
+function haversineMeters(aLat, aLng, bLat, bLng) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(s));
 }
-const walkMin = (lat, lon) =>
-  Math.max(1, Math.ceil((haversine(STOP.lat, STOP.lng, lat, lon) * GRID_FACTOR) / WALK_M_PER_MIN));
 
-async function getJSON(url, opts = {}, ms = 4000) {
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), ms);
-  try {
-    const r = await fetch(url, { ...opts, signal: ctl.signal });
-    if (!r.ok) throw new Error(url.split("?")[0] + " -> " + r.status);
-    return await r.json();
-  } finally { clearTimeout(t); }
+// Walnut St is one-way WESTBOUND through Center City, so the buses that can
+// still reach this stop are the ones heading west and still east of it.
+//
+// We test the compass heading rather than the Direction string: route 21 and
+// 42 label their trips Westbound/Eastbound, but route 9 runs Northbound to
+// Andorra and Southbound to 4th-Walnut, and it is the NORTHBOUND trip that
+// travels west along Walnut St. Heading is route-agnostic.
+function headingIsWestward(h) {
+  return typeof h === "number" && h > 200 && h < 340;
 }
 
-// ---- 1. places (TomTom) ---------------------------------------------------
-async function nearbyPlaces(key, radius) {
-  const base = "https://api.tomtom.com/search/2/nearbySearch/.json?key=" + key +
-    "&lat=" + STOP.lat + "&lon=" + STOP.lng + "&radius=" + radius + "&limit=100";
-  let j = await getJSON(base + "&categorySet=" + CATEGORY_SET);
-  if (!j.results || !j.results.length) j = await getJSON(base);
-  const seen = new Set(), out = [];
-  for (const x of j.results || []) {
-    const poi = x.poi || {};
-    const code = (poi.classifications && poi.classifications[0] && poi.classifications[0].code) || "";
-    const bucket = BUCKET[code];
-    if (!bucket || !poi.name || seen.has(poi.name)) continue;
-    seen.add(poi.name);
-    out.push({
-      name: poi.name,
-      bucket,
-      category: (poi.categories && poi.categories[0]) || code.toLowerCase(),
-      lat: x.position.lat,
-      lon: x.position.lon,
+function isRealVehicle(b) {
+  if (!b.VehicleID || b.VehicleID === "None") return false;
+  // SEPTA uses 998/999 in `late` for vehicles it has lost contact with.
+  if (typeof b.late === "number" && b.late >= 900) return false;
+  return true;
+}
+
+async function fetchRoute(routeId) {
+  const url = "https://www3.septa.org/api/TransitView/index.php?route=" + routeId;
+  const res = await fetch(url, { headers: { "User-Agent": "from-here-prototype" } });
+  if (!res.ok) throw new Error("SEPTA " + routeId + " returned " + res.status);
+  const json = await res.json();
+  return Array.isArray(json.bus) ? json.bus : [];
+}
+
+// SEPTA reports crowding per vehicle in `estimated_seat_availability`. It is a
+// real, live, and almost completely unused field. Collapse its vocabulary into
+// four ordered states plus "unknown", so the screen never has to guess.
+function seatState(raw) {
+  const s = String(raw || "").toUpperCase();
+  if (s === "EMPTY" || s === "MANY_SEATS_AVAILABLE") return "seats";
+  if (s === "FEW_SEATS_AVAILABLE") return "few";
+  if (s === "STANDING_ROOM_ONLY") return "standing";
+  if (s === "FULL" || s === "CRUSHED_STANDING_ROOM_ONLY") return "full";
+  return "unknown";
+}
+
+function nextArrival(buses, route) {
+  const candidates = [];
+
+  for (const b of buses) {
+    const lat = parseFloat(b.lat);
+    const lng = parseFloat(b.lng);
+    if (!isFinite(lat) || !isFinite(lng)) continue;
+    if (!isRealVehicle(b)) continue;
+
+    // Still east of us (a westbound bus west of the stop has already passed).
+    if (lng <= STOP.lng) continue;
+
+    // On the Walnut St corridor, not somewhere else on the route.
+    if (Math.abs(lat - STOP.lat) > LAT_BAND) continue;
+
+    if (!headingIsWestward(b.heading)) continue;
+
+    const meters = haversineMeters(lat, lng, STOP.lat, STOP.lng) * GRID_FACTOR;
+    const minutes = Math.round(meters / BUS_SPEED_MS / 60);
+    if (minutes > MAX_MINUTES) continue;
+
+    candidates.push({
+      minutes,
+      vehicle: b.VehicleID,
+      destination: b.destination || route.headsign,
+      nextStop: b.next_stop_name || null,
+      late: typeof b.late === "number" ? b.late : null,
+      seats: seatState(b.estimated_seat_availability),
+      seatsRaw: b.estimated_seat_availability || null,
+      meters: Math.round(meters),
     });
   }
-  return out;
-}
 
-// ---- 2. context the AI reads ---------------------------------------------
-async function weatherLine() {
-  try {
-    const j = await getJSON("https://api.weather.gov/gridpoints/PHI/50,79/forecast/hourly",
-      { headers: { "User-Agent": "from-here-prototype (UPenn IPD course)", Accept: "application/geo+json" } }, 2500);
-    const p = j.properties.periods[0];
-    return p.temperature + "°" + p.temperatureUnit + ", " + p.shortForecast +
-      (p.probabilityOfPrecipitation && p.probabilityOfPrecipitation.value
-        ? ", " + p.probabilityOfPrecipitation.value + "% chance of rain" : "");
-  } catch { return "unknown"; }
-}
-function localTime() {
-  return new Date().toLocaleString("en-US", {
-    timeZone: "America/New_York", weekday: "long", hour: "numeric", minute: "2-digit",
-  });
-}
-
-// ---- 3. the AI step -------------------------------------------------------
-const SYSTEM = `You are the brain of a bus-stop screen at 11th & Walnut St, Philadelphia.
-A rider just tapped the bus they are waiting for. They have a few minutes to kill.
-Pick exactly 3 things they could do nearby and still be back in time.
-
-Rules:
-- Round trip must fit: 2 x walk + dwell <= budget. "walk" is given per place. You choose "dwell" (minutes spent there).
-- Make the 3 options different kinds when possible: one "eat", one "shop", one "see".
-- Read the situation: time of day (don't suggest a bar at 9am or a museum that's surely closed at 11pm), weather (rain -> closer places, indoors), how long the wait is (short wait -> quick grab; long wait -> something to browse).
-- If the bus is delayed, you may say so warmly in "note".
-- "pitch": max 60 characters, concrete, what to do there (e.g. "Grab a soft pretzel at the Amish counter"). No made-up facts about prices or menus you can't know; keep it generic if unsure.
-- "note": one short sentence (max 70 chars) framing the moment for the rider.
-Reply with JSON only:
-{"note":"...","options":[{"id":<number>,"dwell":<minutes>,"pitch":"..."}]}`;
-
-// DeepSeek speaks the OpenAI chat format. Used when DEEPSEEK_API_KEY is set.
-async function askDeepSeek(key, user) {
-  const j = await getJSON("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: "Bearer " + key },
-    body: JSON.stringify({
-      model: process.env.DEEPSEEK_MODEL || "deepseek-flash",
-      max_tokens: 400,
-      response_format: { type: "json_object" },
-      messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }],
-    }),
-  }, 8000);
-  return (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "";
-}
-
-async function askAI(ctx, candidates) {
-  const list = candidates.map((c, i) =>
-    `${i}. ${c.name} | ${c.bucket} | ${c.category} | walk ${c.walk} min`).join("\n");
-  const user =
-    `Bus ${ctx.route} arrives in ${ctx.minutes} min${ctx.late ? ` (running ${ctx.late} min late)` : ""}.\n` +
-    `Budget (must be back ${BUFFER_MIN} min early): ${ctx.budget} min.\n` +
-    `Local time: ${ctx.time}. Weather: ${ctx.weather}.\n\nPlaces:\n${list}`;
-
-  if (process.env.DEEPSEEK_API_KEY) {
-    const text = await askDeepSeek(process.env.DEEPSEEK_API_KEY, user);
-    const m = text.match(/\{[\s\S]*\}/);
-    return m ? JSON.parse(m[0]) : null;
-  }
-
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return null;
-  const j = await getJSON("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5",
-      max_tokens: 400,
-      system: SYSTEM,
-      messages: [{ role: "user", content: user }],
-    }),
-  }, 7000);
-  const text = (j.content || []).map((b) => b.text || "").join("");
-  const m = text.match(/\{[\s\S]*\}/);
-  return m ? JSON.parse(m[0]) : null;
-}
-
-// Rule-based stand-in when the AI is unavailable: closest place per kind.
-function rulePick(candidates, budget) {
-  const out = [];
-  for (const b of ["eat", "shop", "see"]) {
-    const c = candidates.map((x, i) => ({ ...x, id: i })).filter((x) => x.bucket === b)[0];
-    if (c) out.push({ id: c.id, dwell: Math.min(8, budget - 2 * c.walk), pitch: "" });
-  }
-  return { note: "", options: out };
-}
-
-// ---- 4. real walking route (TomTom) --------------------------------------
-async function walkRoute(key, lat, lon) {
-  const url = "https://api.tomtom.com/routing/1/calculateRoute/" +
-    STOP.lat + "," + STOP.lng + ":" + lat + "," + lon +
-    "/json?travelMode=pedestrian&routeType=shortest&key=" + key;
-  const j = await getJSON(url, {}, 3500);
-  const r = j.routes[0];
-  return {
-    walk: Math.max(1, Math.ceil(r.summary.travelTimeInSeconds / 60)),
-    path: r.legs[0].points.map((p) => [p.latitude, p.longitude]),
-  };
+  candidates.sort((a, b) => a.minutes - b.minutes);
+  return candidates;
 }
 
 export default async function handler(req, res) {
-  res.setHeader("Cache-Control", "no-store");
-  const q = req.query || {};
-  const route = String(q.route || "21");
-  const minutes = Math.max(0, parseInt(q.minutes, 10) || 0);
-  const late = parseInt(q.late, 10) || 0;
-  const budget = minutes - BUFFER_MIN;
-
-  if (budget < MIN_BUDGET) {
-    return res.status(200).json({
-      route, minutes, budget, stay: true, options: [],
-      note: `Bus ${route} is almost here - better stay put.`,
-    });
-  }
-
-  const tomtom = process.env.TOMTOM_API_KEY;
-  // Farthest one-way walk that could still leave 2 minutes inside.
-  const maxWalk = Math.floor((budget - 2) / 2);
-  const radius = Math.min(900, Math.round((maxWalk * WALK_M_PER_MIN) / GRID_FACTOR));
+  // Cache at the edge so a screen refreshing every 20s does not hammer SEPTA.
+  res.setHeader("Cache-Control", "s-maxage=15, stale-while-revalidate=45");
 
   try {
-    let places, sample = false;
-    try {
-      places = tomtom ? await nearbyPlaces(tomtom, radius) : null;
-    } catch { places = null; }
-    if (!places || !places.length) { places = SAMPLE; sample = true; }
+    const board = [];
 
-    // Hard filter first: only places where a round trip + minimum stay fits.
-    const candidates = places
-      .map((p) => ({ ...p, walk: walkMin(p.lat, p.lon) }))
-      .filter((p) => 2 * p.walk + MIN_DWELL[p.bucket] <= budget)
-      .sort((a, b) => a.walk - b.walk)
-      .slice(0, 24);
+    const results = await Promise.all(
+      ROUTES.map(async (route) => {
+        try {
+          const buses = await fetchRoute(route.id);
+          const queue = nextArrival(buses, route);
+          const next = queue[0] || null;
 
-    if (!candidates.length) {
-      return res.status(200).json({
-        route, minutes, budget, stay: true, options: [], sample,
-        note: `Nothing fits in ${budget} minutes - the ${route} is close.`,
-      });
-    }
+          for (const c of queue) {
+            board.push({
+              route: route.id,
+              minutes: c.minutes,
+              destination: c.destination,
+              vehicle: c.vehicle,
+              late: c.late,
+              delayed: typeof c.late === "number" && c.late >= DELAY_MIN,
+              seats: c.seats,
+              seatsRaw: c.seatsRaw,
+            });
+          }
 
-    const ctx = { route, minutes, late, budget, time: localTime(), weather: await weatherLine() };
-    let pick = null, ai = false;
-    try { pick = await askAI(ctx, candidates); ai = !!pick; } catch { pick = null; }
-    if (!pick || !Array.isArray(pick.options)) pick = rulePick(candidates, budget);
+          const late = next ? next.late : null;
+          return {
+            route: route.id,
+            destination: next ? next.destination : route.headsign,
+            minutes: next ? next.minutes : null,
+            vehicle: next ? next.vehicle : null,
+            nextStop: next ? next.nextStop : null,
+            late,
+            delayed: typeof late === "number" && late >= DELAY_MIN,
+            seats: next ? next.seats : "unknown",
+            distanceMeters: next ? next.meters : null,
+            vehiclesTracked: buses.length,
+          };
+        } catch (err) {
+          return {
+            route: route.id,
+            destination: route.headsign,
+            minutes: null,
+            delayed: false,
+            seats: "unknown",
+            error: String(err.message || err),
+          };
+        }
+      })
+    );
 
-    // Validate the AI's picks against real walking routes. Anything that no
-    // longer fits is trimmed (shorter stay) or dropped.
-    const used = new Set();
-    const picks = [];
-    for (const o of pick.options) {
-      const id = Number(o.id);
-      if (!candidates[id] || used.has(id)) continue;
-      used.add(id);
-      picks.push({ o, c: candidates[id] });
-    }
-    const checked = await Promise.all(picks.slice(0, 4).map(async ({ o, c }) => {
-      let walk = c.walk, path = null;
-      if (tomtom && !sample) {
-        try { ({ walk, path } = await walkRoute(tomtom, c.lat, c.lon)); } catch {}
-      }
-      const room = budget - 2 * walk;
-      const dwell = Math.min(Math.max(1, Math.round(Number(o.dwell) || 0)), room);
-      if (dwell < MIN_DWELL[c.bucket] - 1) return null;
-      return {
-        name: c.name, bucket: c.bucket, category: c.category,
-        lat: c.lat, lon: c.lon, walk, dwell,
-        pitch: String(o.pitch || "").slice(0, 70),
-        path,
-      };
-    }));
-    const options = checked.filter(Boolean).slice(0, 3);
+    board.sort((a, b) => a.minutes - b.minutes);
 
     res.status(200).json({
-      route, minutes, budget, late, ai, sample,
-      note: String(pick.note || "").slice(0, 80),
-      context: { time: ctx.time, weather: ctx.weather },
-      options,
+      stop: STOP,
+      updated: new Date().toISOString(),
+      source: "SEPTA TransitView (live vehicle positions)",
+      method: "straight-line distance x " + GRID_FACTOR + " grid factor / " + BUS_SPEED_MS + " m/s",
+      seatSource: "SEPTA estimated_seat_availability, reported per vehicle",
+      arrivals: results,
+      board: board.slice(0, 6),
     });
   } catch (err) {
     res.status(502).json({ error: String(err.message || err) });
